@@ -114,3 +114,67 @@ The shared clinic URL now opens a browser landing page:
 - `/thanks`: submission confirmation.
 
 This is workflow separation for the synthetic demo, not GP authentication. No queue or patient database API is exposed through the intake website.
+
+## Voice intake kiosk (iOS)
+
+`GPinTheBoxiOS/GPInTheBoxKiosk.xcodeproj` is a companion iPhone/iPad app. A patient answers ten fixed intake questions by voice or typing, reviews the answers, and sends them to the Mac. Use synthetic data only; the demo boundaries above apply to the kiosk too.
+
+### Requirements
+
+- An Apple Intelligence-capable iPhone or iPad on iOS/iPadOS 26 or later.
+- The device on the same Wi-Fi as the Mac running SteadyCare. The Mac advertises `_steadycare._tcp` while the app is running.
+
+### Build
+
+Build the Mac app from `GPinTheBox/GPInTheBox.xcodeproj` (scheme `GPInTheBox`). Build the kiosk from `GPinTheBoxiOS/GPInTheBoxKiosk.xcodeproj` (scheme `GPInTheBoxKiosk`). The simulator build used during development:
+
+```sh
+xcodebuild -project GPinTheBoxiOS/GPInTheBoxKiosk.xcodeproj -scheme GPInTheBoxKiosk \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5' \
+  -derivedDataPath DerivedData build
+```
+
+For a real device, select a development team in Xcode.
+
+### Staff setup
+
+Long-press the welcome screen for 2 seconds to open staff setup. If several Macs are found, pick one; the choice is remembered. Check speech readiness and choose **Download speech assets**. If en-AU speech isn't available, the kiosk uses en-US and flags it.
+
+Then turn on Guided Access (Settings → Accessibility) to lock the device to the app.
+
+### Patient flow
+
+The ten questions are spoken aloud in an en-AU voice and shown as a chat. For each one the patient can speak or type. Live captions show what is heard, and silence or **Done** ends a spoken answer. **Repeat question** replays it, and **Skip** is available for questions 4 to 10.
+
+Answers are tidied on the device by Apple's Foundation Models; if the model is unavailable, the raw transcript is used. The model may pre-fill later answers from an earlier one, and these are always read back for confirmation. A mandatory review screen comes before **Send to clinic**, which retries for up to 30 seconds. After a successful send the kiosk shows "Thanks, please take a seat." and resets after about 5 seconds. After 2 minutes idle it asks "Are you still there?" and resets 20 seconds later. The kiosk keeps nothing except the chosen Mac's name.
+
+### Tests
+
+```sh
+swift test --package-path Packages/KioskProtocol
+swift test --package-path GPinTheBoxiOS/KioskKit
+swift test --package-path Packages/GPInTheBoxKit
+```
+
+### Known consequences
+
+- **Duplicate patients:** every submission creates a new patient on the Mac. A returning kiosk patient gets a second `Patient` with the same Medicare ID and date of birth.
+- **No history recovery:** **Patient history recovered** won't appear for kiosk visits.
+- **Possible `identityCollision`:** later web submissions match whichever duplicate is returned first, and **Correct identity** may reject edits as `identityCollision`. Staff need to know this, and it should be reconsidered before anything beyond the demo.
+- **No transport security:** plain TCP and no pairing. Any device on the Wi-Fi can submit, the same as the existing HTTP form.
+- **Shared-kiosk privacy:** answers stay on screen until reset, so the idle timeout and post-send wipe are the only protection.
+
+Out of scope for v1: other languages, patients' own phones, reading the Mac's questionnaire, patient matching for kiosk intakes, encryption or pairing, accessibility beyond captions plus typing, and persistent kiosk history.
+
+### Manual checks (on device)
+
+Not yet run on a real iPad. Tick each item and fill in the result.
+
+- [ ] First launch: Local Network and microphone prompts appear on the kiosk, and the Local Network prompt appears on the Mac.
+- [ ] Speak the synthetic Jane Demo script ("Jane Demo", "D E M O zero zero one", "first of May nineteen eighty", "I've had a cough since Monday"). The ID is tidied to `DEMO001`, the date of birth shows as `1 May 1980`, and "When did it start?" is read back as a pre-fill.
+- [ ] Turn off Wi-Fi during **Send to clinic**. After about 30 seconds, `Couldn't reach the clinic — ask reception` appears. Turn Wi-Fi back on and tap **Try again**: exactly one new patient appears on the Mac.
+- [ ] With two Macs advertising the service, the staff picker appears and the choice is remembered across relaunch.
+- [ ] Leave the kiosk idle for 2 minutes mid-question: "Are you still there?" appears, then 20 seconds later the kiosk is back at Welcome with nothing left on screen.
+- [ ] Note whether `en_AU` speech was available on the device, and the fallback if not.
+
+Result: not yet run.
