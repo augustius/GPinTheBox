@@ -37,7 +37,9 @@ No demo data is automatically inserted. The local store persists across app laun
 
 ## Consultation recording, transcription, and reviewed summaries
 
-During an active visit, the **Consultation recording** panel lets the doctor confirm patient agreement, choose **English (Australia)** or **English (US)**, and explicitly start microphone recording. Recording never starts automatically. macOS requests microphone access on the first start.
+The GP workspace opens each visit on **Intake**, followed by separate **Recording**, **GP Notes**, **History**, and **Assistant** sections. The patient browser remains intake-only. Switching sections within the same visit preserves drafts and keeps recording active; the header shows recording status and a link back to its controls. Switching patients or leaving the visit stops recording.
+
+During an active visit, the **Recording** section lets the doctor confirm patient agreement, choose **English (Australia)** or **English (US)**, and explicitly start microphone recording. Recording never starts automatically. macOS requests microphone access on the first start.
 
 Choose **Stop & transcribe** to run Apple's on-device `SpeechTranscriber` and then create an Apple Foundation Models draft. Language assets may need a one-time download; the conversation itself is not uploaded and there is no cloud fallback. The transcript is a combined conversation, not speaker diarization: it does not automatically distinguish the doctor from the patient.
 
