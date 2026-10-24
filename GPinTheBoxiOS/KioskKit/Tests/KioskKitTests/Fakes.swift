@@ -22,3 +22,15 @@ struct FakeAnswerModel: AnswerModel {
         return result()
     }
 }
+
+actor FakeTransport: KioskTransport {
+    private var results: [Result<KioskResponse, any Error>]
+    private(set) var requests: [KioskRequest] = []
+    init(results: [Result<KioskResponse, any Error>]) { self.results = results }
+
+    func send(_ request: KioskRequest) async throws -> KioskResponse {
+        requests.append(request)
+        guard !results.isEmpty else { throw FakeError() }
+        return try results.removeFirst().get()
+    }
+}
