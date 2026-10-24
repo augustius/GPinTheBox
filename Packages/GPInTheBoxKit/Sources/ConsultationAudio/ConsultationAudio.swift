@@ -147,20 +147,36 @@ public actor OnDeviceTranscriber {
     private var busy = false
     public init() {}
 
-    /// SpeechTranscriber performs recognition on device. Only language-asset installation may
-    /// use the network; no SFSpeechRecognizer/server recognition fallback exists here.
+    /// Both engines run locally; networking is used only for Apple's language-asset installation.
     public func transcribe(url: URL, localeIdentifier: String) async throws -> String {
+        try await transcribeDetailed(url: url, localeIdentifier: localeIdentifier).text
+    }
+
+    public func transcribeDetailed(url: URL, localeIdentifier: String, glossary: [String] = []) async throws -> TranscriptionOutput {
         guard !busy else { throw ConsultationAudioError.transcriptionAlreadyRunning }
         busy = true; defer { busy = false }
         try Task.checkCancellation()
         guard ConsultationLanguage(rawValue: localeIdentifier) != nil else { throw ConsultationAudioError.unsupportedLocale(localeIdentifier) }
-        guard SpeechTranscriber.isAvailable else { throw ConsultationAudioError.onDeviceSpeechUnavailable }
-        guard let locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: localeIdentifier)) else {
-            throw ConsultationAudioError.unsupportedLocale(localeIdentifier)
+        let terms = try SpeechGlossaryStore.normalize(glossary)
+        if terms.isEmpty {
+            guard SpeechTranscriber.isAvailable else { throw ConsultationAudioError.onDeviceSpeechUnavailable }
+            guard let locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: localeIdentifier)) else {
+                throw ConsultationAudioError.unsupportedLocale(localeIdentifier)
+            }
+            let module = SpeechTranscriber(locale: locale, transcriptionOptions: [], reportingOptions: [], attributeOptions: [.audioTimeRange])
+            return try await run(module: module, url: url, glossary: [], engine: "Apple SpeechTranscriber", text: { $0.text })
+        } else {
+            guard let locale = await DictationTranscriber.supportedLocale(equivalentTo: Locale(identifier: localeIdentifier)) else {
+                throw ConsultationAudioError.unsupportedLocale(localeIdentifier)
+            }
+            let module = DictationTranscriber(locale: locale, preset: .timeIndexedLongDictation)
+            return try await run(module: module, url: url, glossary: terms, engine: "Apple DictationTranscriber (glossary)", text: { $0.text })
         }
-        try Task.checkCancellation()
-        let transcriber = SpeechTranscriber(locale: locale, preset: .transcription)
-        let modules: [any SpeechModule] = [transcriber]
+    }
+
+    private func run<Module: SpeechModule>(module: Module, url: URL, glossary: [String], engine: String,
+                                           text: @escaping @Sendable (Module.Result) -> AttributedString) async throws -> TranscriptionOutput {
+        let modules: [any SpeechModule] = [module]
         if let installation = try await AssetInventory.assetInstallationRequest(supporting: modules) {
             try await installation.downloadAndInstall()
         }
@@ -169,24 +185,27 @@ public actor OnDeviceTranscriber {
         let file = try AVAudioFile(forReading: url)
         guard file.length > 0 else { throw ConsultationAudioError.emptyAudio }
         let analyzer = SpeechAnalyzer(modules: modules)
+        if !glossary.isEmpty {
+            let context = AnalysisContext()
+            context.contextualStrings[.general] = glossary
+            try await analyzer.setContext(context)
+        }
         let resultTask = Task {
-            var portions: [String] = []
-            for try await result in transcriber.results {
+            var segments: [TranscriptionSegment] = []
+            for try await result in module.results {
                 try Task.checkCancellation()
-                // The transcription preset emits final results, never volatile hypotheses.
                 guard result.isFinal else { continue }
-                let portion = String(result.text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
-                if !portion.isEmpty { portions.append(portion) }
+                segments.append(contentsOf: timedSegments(text: text(result), fallback: result.range))
             }
-            return portions.joined(separator: " ")
+            return TranscriptionOutput(segments: segments, engine: engine)
         }
         return try await withTaskCancellationHandler {
             do {
                 try await analyzer.start(inputAudioFile: file, finishAfterFile: true)
-                let transcript = try await resultTask.value
+                let output = try await resultTask.value
                 try Task.checkCancellation()
-                guard !transcript.isEmpty else { throw ConsultationAudioError.emptyTranscript }
-                return transcript
+                guard !output.text.isEmpty else { throw ConsultationAudioError.emptyTranscript }
+                return output
             } catch {
                 resultTask.cancel()
                 await analyzer.cancelAndFinishNow()

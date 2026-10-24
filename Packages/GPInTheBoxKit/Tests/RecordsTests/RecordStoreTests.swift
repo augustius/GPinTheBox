@@ -167,3 +167,25 @@ func submission(_ q: QuestionnaireSnapshot, id: UUID = UUID(), medicare: String 
     let snapshot = try await store.snapshot(patientID: first.patientID)
     #expect(Set(snapshot.visits.map(\.id)) == Set([first.visitID, second.visitID]))
 }
+
+@Test func historyLookupExcludesCurrentFutureAndOtherPatients() async throws {
+    let (store, q) = try await fixture()
+    var first = submission(q)
+    first.receivedAt = Date(timeIntervalSince1970: 1_700_000_000)
+    first.answers[0].value = "Previous symptoms"
+    let original = try await store.recordSubmission(first)
+    #expect(try await store.history(patientID: original.patientID, beforeVisitID: original.visitID).visits.isEmpty)
+    var current = submission(q, medicare: "AB1234")
+    current.receivedAt = first.receivedAt.addingTimeInterval(60)
+    let returning = try await store.recordSubmission(current)
+    var future = submission(q)
+    future.receivedAt = current.receivedAt.addingTimeInterval(60)
+    _ = try await store.recordSubmission(future)
+    let unrelated = try await store.recordSubmission(submission(q, medicare: "OTHER"))
+    let history = try await store.history(patientID: returning.patientID, beforeVisitID: returning.visitID)
+    #expect(history.visits.map(\.id) == [original.visitID])
+    #expect(history.visits.first?.answers.first?.value == "Previous symptoms")
+    await #expect(throws: RecordError.missingVisit) {
+        try await store.history(patientID: returning.patientID, beforeVisitID: unrelated.visitID)
+    }
+}

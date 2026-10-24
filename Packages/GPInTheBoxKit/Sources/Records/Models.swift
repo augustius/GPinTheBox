@@ -114,13 +114,14 @@ public struct SubmissionReceipt: Sendable, Equatable {
     public var isReplay: Bool = false
 }
 public enum RecordError: Error, LocalizedError, Equatable {
-    case submissionConflict, identityCollision, invalidIdentity, missingPatient, unknownQuestionnaire, invalidQuestionnaire
+    case submissionConflict, identityCollision, invalidIdentity, missingPatient, missingVisit, unknownQuestionnaire, invalidQuestionnaire
     public var errorDescription: String? {
         switch self {
         case .submissionConflict: "This submission ID was already used with different answers. Open a new form."
         case .identityCollision: "Another patient already has this ID and date of birth. No changes were saved."
         case .invalidIdentity: "Enter a name, Medicare or insurance ID, and a valid date of birth."
         case .missingPatient: "The patient could not be found."
+        case .missingVisit: "The visit could not be found in this patient’s record."
         case .unknownQuestionnaire: "This questionnaire is unavailable. Please open a new form."
         case .invalidQuestionnaire: "Questions must have unique IDs and non-empty prompts."
         }

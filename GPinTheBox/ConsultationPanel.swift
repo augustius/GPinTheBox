@@ -4,7 +4,7 @@ import Records
 import Assistant
 import ConsultationAudio
 
-/// This view owns recording for one visit. Moving away always stops the microphone;
+/// This view owns recording for one visit. Leaving the visit stops the microphone;
 /// pending audio remains associated with the original visit for explicit recovery.
 struct ConsultationPanel: View {
     let visit: Visit
@@ -19,7 +19,9 @@ struct ConsultationPanel: View {
     @State private var operationID = UUID()
     @State private var working: String?
     @State private var error: String?
-    @State private var discarded: Consultation?
+    @State private var showArchived = false
+    @State private var showSpeechSettings = false
+    @AppStorage("localSpeech.separateSpeakers") private var separateSpeakers = false
 
     init(visit: Visit, model: AppModel) {
         self.visit = visit; self.model = model
@@ -29,7 +31,7 @@ struct ConsultationPanel: View {
     var body: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Record once the patient is seated with the doctor. Transcription and summaries run on this Mac. Audio is deleted after the transcript is saved.")
+                Text("Record once the patient is seated with the doctor. Transcription and summaries run on this Mac. Audio is deleted after the transcript and requested speaker analysis are saved.")
                     .font(.callout).foregroundStyle(.secondary)
                 HStack {
                     Picker("Spoken English", selection: $locale) {
@@ -41,7 +43,7 @@ struct ConsultationPanel: View {
                         Label("Recording · \(elapsed)", systemImage: "record.circle.fill").foregroundStyle(.red).font(.headline).accessibilityLabel("Recording in progress")
                         Button("Stop & transcribe") { stopAndTranscribe() }.buttonStyle(.borderedProminent).tint(.red)
                     } else {
-                        Button { startRecording() } label: { Label("Start recording", systemImage: "mic.fill") }
+                        Button { startRecording() } label: { Label(consultations.isEmpty ? "Start recording" : "Record again", systemImage: "mic.fill") }
                             .buttonStyle(.borderedProminent).tint(.teal)
                             .disabled(!consent || working != nil || model.recordingVisitID != nil || visit.status == .done)
                     }
@@ -51,12 +53,24 @@ struct ConsultationPanel: View {
                         .disabled(working != nil || visit.status == .done)
                     if visit.status == .done { Text("This visit is finished. Recording is available during an active consultation.").font(.caption).foregroundStyle(.secondary) }
                 }
+                HStack {
+                    Button("Speech glossary & setup…") { showSpeechSettings = true }
+                    Toggle("Separate speakers locally (Core ML)", isOn: $separateSpeakers)
+                }.disabled(working != nil || recorder.isRecording)
+                if separateSpeakers {
+                    Text("Download the speaker model once in Speech glossary & setup. Speaker labels are estimates; assign Doctor and Patient after checking the conversation.").font(.caption).foregroundStyle(.secondary)
+                }
                 if let working {
                     HStack { ProgressView().controlSize(.small); Text(working); Button("Cancel") { cancelOperation() } }
                 }
                 if let error { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).textSelection(.enabled) }
                 if let recordingError = recorder.lastError { Text(recordingError).foregroundStyle(.orange) }
-                ForEach(consultations) { consultation in
+                if !consultations.isEmpty && !recorder.isRecording {
+                    Text("Record again starts a new attempt, even if the previous one was archived. Check patient agreement first. Re-record archives an existing attempt before starting fresh.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Toggle("Show archived recordings", isOn: $showArchived)
+                ForEach(consultations.filter { showArchived || $0.archivedAt == nil }) { consultation in
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
                             Text(consultation.startedAt.formatted(date: .abbreviated, time: .shortened)).font(.headline)
@@ -64,6 +78,23 @@ struct ConsultationPanel: View {
                             Spacer()
                             if consultation.approvedSnapshot() != nil { Label("Approved", systemImage: "checkmark.seal.fill").foregroundStyle(.teal) }
                         }
+                        if consultation.archivedAt != nil {
+                            Label("Archived — excluded from patient summaries and answers", systemImage: "archivebox")
+                            Button("Restore recording") { setArchived(consultation, archived: false) }
+                                .disabled(working != nil || recorder.isRecording)
+                            if !consultation.transcript.isEmpty {
+                                DisclosureGroup("Archived transcript and summary") {
+                                    Text(consultation.transcript).textSelection(.enabled)
+                                    Text(consultation.approvedSummary.isEmpty ? consultation.draftSummary : consultation.approvedSummary).textSelection(.enabled)
+                                }
+                            }
+                        } else {
+                        HStack {
+                            Button("Re-record") { rerecord(consultation) }
+                                .disabled(!consent || model.recordingVisitID != nil || visit.status == .done)
+                            Button("Delete (archive)") { setArchived(consultation, archived: true) }
+                            Text("Keeps saved content. You can restore it or start a new recording.").font(.caption).foregroundStyle(.secondary)
+                        }.disabled(working != nil || recorder.isRecording)
                         if consultation.wasInterrupted {
                             Text("This recording ended early or was interrupted. Its transcript may cover only part of the consultation.").font(.caption).foregroundStyle(.orange)
                         }
@@ -72,24 +103,34 @@ struct ConsultationPanel: View {
                                 Text(consultation.endedAt == nil ? "Recording interrupted or not started. Any captured audio is retained for recovery." : "Audio retained until transcription is saved.").foregroundStyle(.secondary)
                                 HStack {
                                     Button("Transcribe recording") { transcribe(consultation) }.disabled(working != nil || recorder.isRecording)
-                                    Button("Discard recording", role: .destructive) { discarded = consultation }.disabled(working != nil || recorder.isRecording)
                                 }
                             }
                         } else {
                             ConsultationReview(consultation: consultation, model: model)
-                                .disabled(working != nil || recorder.isRecording)
+                                .disabled(working != nil || recorder.isRecording || consultation.diarizationStatus == .pending || consultation.diarizationStatus == .failed)
                             if consultation.audioFileName != nil {
-                                Text("The transcript is saved, but audio cleanup is still pending.").font(.caption).foregroundStyle(.orange)
-                                Button("Delete saved audio") { deleteSavedAudio(consultation) }.disabled(working != nil)
+                                if consultation.diarizationStatus == .pending || consultation.diarizationStatus == .failed {
+                                    Text("Transcript saved. Speaker separation is incomplete; audio is retained for retry.").font(.caption).foregroundStyle(.orange)
+                                    HStack {
+                                        Button("Retry speaker separation") { retrySpeakers(consultation) }.disabled(consultation.conversationTurns.isEmpty)
+                                        Button("Keep transcript only & delete audio") { skipSpeakers(consultation) }
+                                    }.disabled(working != nil || recorder.isRecording)
+                                } else {
+                                    Text("The transcript is saved, but audio cleanup is still pending.").font(.caption).foregroundStyle(.orange)
+                                    Button("Delete saved audio") { deleteSavedAudio(consultation) }.disabled(working != nil || recorder.isRecording)
+                                }
                             } else { Text("Transcript saved · original audio deleted").font(.caption).foregroundStyle(.secondary) }
+                        }
                         }
                     }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color.teal.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
                 }
             }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
         } label: { Label("Consultation recording", systemImage: "waveform") }
+        .sheet(isPresented: $showSpeechSettings) { SpeechSettingsView() }
         .onDisappear { stopForBoundary() }
         .onChange(of: recorder.isRecording) { wasRecording, isRecording in
+            if active != nil { model.microphoneIsRecording = isRecording }
             if wasRecording && !isRecording {
                 if model.recordingVisitID == visit.id { model.recordingVisitID = nil }
                 if let active, active.endedAt == nil {
@@ -101,15 +142,12 @@ struct ConsultationPanel: View {
         }
         .task {
             // Recover the narrow crash window after transcript save but before audio deletion.
-            for consultation in consultations where !consultation.transcript.isEmpty && consultation.audioFileName != nil {
+            for consultation in consultations where consultation.archivedAt == nil && !consultation.transcript.isEmpty && consultation.audioFileName != nil && consultation.diarizationStatus != .pending && consultation.diarizationStatus != .failed {
                 deleteSavedAudio(consultation)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in stopForBoundary() }
-        .alert("Discard this recording?", isPresented: Binding(get: { discarded != nil }, set: { if !$0 { discarded = nil } })) {
-            Button("Keep recording", role: .cancel) { discarded = nil }
-            Button("Discard", role: .destructive) { if let discarded { discard(discarded) }; discarded = nil }
-        } message: { Text("This removes the unsaved audio and the empty recording attempt. It cannot be recovered.") }
+
     }
     private var elapsed: String { String(format: "%02d:%02d", Int(recorder.duration) / 60, Int(recorder.duration) % 60) }
     private func startRecording() {
@@ -152,13 +190,14 @@ struct ConsultationPanel: View {
         operationID = UUID(); operation?.cancel(); operation = nil
         _ = try? recorder.stop()
         if let active, active.endedAt == nil { active.wasInterrupted = true; try? ConsultationMutations.markStopped(context: context, consultation: active) }
-        if model.recordingVisitID == visit.id { model.recordingVisitID = nil }
+        if model.recordingVisitID == visit.id { model.recordingVisitID = nil; model.microphoneIsRecording = false }
         working = nil; consent = false
     }
     private func cancelOperation() { stopForBoundary(); error = "Processing cancelled. Any unsaved recording stays with this visit so you can retry." }
     private func transcribe(_ consultation: Consultation) {
         guard !recorder.isRecording, consultation.transcript.isEmpty else { return }
         let requestID = UUID(); operationID = requestID
+        let wantsSpeakers = separateSpeakers
         operation?.cancel(); error = nil; working = "Transcribing on this Mac. Speech assets may need to download first…"
         operation = Task { @MainActor in
             do {
@@ -167,42 +206,122 @@ struct ConsultationPanel: View {
                 guard FileManager.default.fileExists(atPath: url.path) else { throw CocoaError(.fileNoSuchFile) }
                 if consultation.endedAt == nil { consultation.wasInterrupted = true }
                 try ConsultationMutations.markStopped(context: context, consultation: consultation)
-                let transcript = try await OnDeviceTranscriber().transcribe(url: url, localeIdentifier: consultation.localeIdentifier)
+                let glossary = try SpeechGlossaryStore().load()
+                let result = try await OnDeviceTranscriber().transcribeDetailed(url: url, localeIdentifier: consultation.localeIdentifier, glossary: glossary)
                 try Task.checkCancellation()
-                // This save must succeed before any file deletion.
-                try ConsultationMutations.saveTranscript(context: context, consultation: consultation, text: transcript)
+                guard operationID == requestID else { return }
+                let turns = result.segments.map { ConversationTurn(id: $0.id, text: $0.text, startSeconds: $0.startSeconds, endSeconds: $0.endSeconds) }
+                // Commit text and pending speaker state together before further work or audio deletion.
+                try ConsultationMutations.saveConversation(context: context, consultation: consultation, turns: wantsSpeakers ? turns : groupedTurns(turns),
+                    diarizationStatus: wantsSpeakers ? .pending : .notRequested)
+                if wantsSpeakers {
+                    working = "Separating speakers locally…"
+                    try await separate(consultation, audioURL: url, requestID: requestID)
+                }
                 deleteSavedAudio(consultation)
-                try Task.checkCancellation()
-                working = "Creating a draft summary on this Mac…"
-                let revision = consultation.transcriptRevision
-                let result = try await ConsultationSummarizer(model: FoundationModelsAssistant()).summarize(transcript: transcript, consultationID: consultation.id, date: consultation.startedAt)
-                try Task.checkCancellation()
-                let draft = result.claims.map { $0.text }.joined(separator: "\n\n")
-                try ConsultationMutations.saveDraft(context: context, consultation: consultation, text: draft, transcriptRevision: revision)
+                try await generateInitialDraft(consultation, requestID: requestID)
+
             } catch {
                 if operationID == requestID, !(error is CancellationError) { self.error = error.localizedDescription }
             }
             if operationID == requestID { working = nil }
         }
     }
+    private func groupedTurns(_ turns: [ConversationTurn]) -> [ConversationTurn] {
+        var grouped: [ConversationTurn] = []
+        for turn in turns {
+            if let last = grouped.last, last.speakerID == turn.speakerID,
+               turn.startSeconds - last.endSeconds < 1.5, turn.endSeconds - last.startSeconds < 20 {
+                grouped[grouped.count - 1].text += " " + turn.text
+                grouped[grouped.count - 1].endSeconds = max(last.endSeconds, turn.endSeconds)
+            } else { grouped.append(turn) }
+        }
+        return grouped
+    }
+    private func separate(_ consultation: Consultation, audioURL: URL, requestID: UUID) async throws {
+        let revision = consultation.transcriptRevision
+        let turns = consultation.conversationTurns
+        do {
+            let intervals = try await LocalSpeechSettings.diarize(audioURL)
+            try Task.checkCancellation()
+            guard operationID == requestID, consultation.transcriptRevision == revision else { throw CancellationError() }
+            let mapped = turns.map { turn -> ConversationTurn in
+                var mapped = turn
+                mapped.speakerID = SpeakerAlignment.speakerID(startSeconds: turn.startSeconds, endSeconds: turn.endSeconds, intervals: intervals)
+                return mapped
+            }
+            try ConsultationMutations.saveConversation(context: context, consultation: consultation, turns: groupedTurns(mapped), diarizationStatus: .completed)
+        } catch {
+            if operationID == requestID, consultation.archivedAt == nil {
+                try? ConsultationMutations.setDiarizationStatus(context: context, consultation: consultation, status: .failed)
+            }
+            throw error
+        }
+    }
+    private func retrySpeakers(_ consultation: Consultation) {
+        guard working == nil, !recorder.isRecording, !consultation.conversationTurns.isEmpty else { return }
+        let requestID = UUID(); operationID = requestID
+        error = nil; working = "Separating speakers locally…"
+        operation = Task { @MainActor in
+            do {
+                guard let filename = consultation.audioFileName else { throw ConsultationRecordError.invalidAudioFileName }
+                try ConsultationMutations.setDiarizationStatus(context: context, consultation: consultation, status: .pending)
+                try await separate(consultation, audioURL: ConsultationAudioFiles.url(fileName: filename), requestID: requestID)
+                deleteSavedAudio(consultation)
+                try await generateInitialDraft(consultation, requestID: requestID)
+            } catch { if operationID == requestID, !(error is CancellationError) { self.error = error.localizedDescription } }
+            if operationID == requestID { working = nil }
+        }
+    }
+    private func skipSpeakers(_ consultation: Consultation) {
+        guard working == nil, !recorder.isRecording else { return }
+        do {
+            try ConsultationMutations.setDiarizationStatus(context: context, consultation: consultation, status: .skipped)
+            deleteSavedAudio(consultation)
+        } catch { self.error = error.localizedDescription }
+    }
+    private func generateInitialDraft(_ consultation: Consultation, requestID: UUID) async throws {
+        try Task.checkCancellation()
+        guard operationID == requestID else { throw CancellationError() }
+        working = "Creating a draft summary on this Mac…"
+        let revision = consultation.transcriptRevision
+        let result = try await ConsultationSummarizer(model: FoundationModelsAssistant()).summarize(transcript: consultation.conversationText, consultationID: consultation.id, date: consultation.startedAt)
+        try Task.checkCancellation()
+        guard operationID == requestID else { throw CancellationError() }
+        try ConsultationMutations.saveDraft(context: context, consultation: consultation, text: result.claims.map(\.text).joined(separator: "\n\n"), transcriptRevision: revision)
+    }
     private func deleteSavedAudio(_ consultation: Consultation) {
-        guard !consultation.transcript.isEmpty, let filename = consultation.audioFileName else { return }
+        guard !consultation.transcript.isEmpty, consultation.diarizationStatus != .pending, consultation.diarizationStatus != .failed, let filename = consultation.audioFileName else { return }
         do {
             let url = try ConsultationAudioFiles.url(fileName: filename)
             if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
             try ConsultationMutations.markAudioDeleted(context: context, consultation: consultation)
         } catch { self.error = "Transcript saved; audio cleanup needs retry: \(error.localizedDescription)" }
     }
-    private func discard(_ consultation: Consultation) {
-        guard consultation.transcript.isEmpty, !recorder.isRecording else { return }
+    private func rerecord(_ consultation: Consultation) {
+        guard consent, working == nil, !recorder.isRecording,
+              model.recordingVisitID == nil, visit.status != .done else { return }
         do {
-            if let filename = consultation.audioFileName {
-                let url = try ConsultationAudioFiles.url(fileName: filename)
-                if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+            if consultation.endedAt == nil {
+                consultation.wasInterrupted = true
+                try ConsultationMutations.markStopped(context: context, consultation: consultation)
             }
-            context.delete(consultation); try context.save()
-        } catch { context.rollback(); self.error = error.localizedDescription }
+            try ConsultationMutations.setArchived(context: context, consultation: consultation, archived: true)
+            startRecording()
+        } catch { self.error = error.localizedDescription }
     }
+    private func setArchived(_ consultation: Consultation, archived: Bool) {
+        guard working == nil, !recorder.isRecording else { return }
+        do {
+            if archived && consultation.endedAt == nil {
+                consultation.wasInterrupted = true
+                try ConsultationMutations.markStopped(context: context, consultation: consultation)
+            }
+            try ConsultationMutations.setArchived(context: context, consultation: consultation, archived: archived)
+            error = nil
+        } catch { self.error = error.localizedDescription }
+    }
+
 }
 
 struct ConsultationReview: View {
@@ -219,13 +338,16 @@ struct ConsultationReview: View {
     @State private var operationID = UUID()
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if !consultation.conversationTurns.isEmpty {
+                ConversationView(consultation: consultation).disabled(generating)
+            }
             DisclosureGroup("Saved consultation transcript") {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Automated combined transcript. Speaker identities are not inferred. Correct any transcription errors before approving a summary.").font(.caption).foregroundStyle(.secondary)
                     TextEditor(text: $transcriptEdit).font(.body).frame(minHeight: 180)
                     Button("Save transcript corrections") { saveTranscript() }
                         .disabled(generating || transcriptEdit == consultation.transcript || transcriptEdit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    if transcriptEdit != consultation.transcript { Text("Saving corrections clears the previous draft and approval; the summary must be reviewed again.").font(.caption).foregroundStyle(.orange) }
+                    if transcriptEdit != consultation.transcript { Text("Saving the combined transcript clears speaker timing, draft, and approval. Use conversation turn edits above to preserve speaker labels.").font(.caption).foregroundStyle(.orange) }
                 }.padding(.top, 8)
             }
             HStack {
@@ -273,7 +395,7 @@ struct ConsultationReview: View {
     private func generate() {
         let requestID = UUID(); operationID = requestID
         operation?.cancel(); generating = true; reviewed = false; error = nil; model.refreshAvailability()
-        let transcript = consultation.transcript, revision = consultation.transcriptRevision
+        let transcript = consultation.conversationText, revision = consultation.transcriptRevision
         operation = Task { @MainActor in
             do {
                 let result = try await ConsultationSummarizer(model: FoundationModelsAssistant()).summarize(transcript: transcript, consultationID: consultation.id, date: consultation.startedAt)
