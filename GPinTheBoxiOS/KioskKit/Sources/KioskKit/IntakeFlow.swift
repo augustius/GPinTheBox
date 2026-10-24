@@ -21,9 +21,9 @@ public struct IntakeFlow: Equatable, Sendable {
 
     @discardableResult public mutating func answer(_ text: String) -> Bool {
         guard let i = currentIndex else { return false }
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty && questions[i].isRequired { return false }
-        answers[i] = trimmed; advance(from: i); return true
+        let value = normalised(text, for: i)
+        if value.isEmpty && questions[i].isRequired { return false }
+        answers[i] = value; advance(from: i); return true
     }
 
     @discardableResult public mutating func skip() -> Bool {
@@ -47,17 +47,17 @@ public struct IntakeFlow: Equatable, Sendable {
 
     public mutating func confirmCandidate() {
         guard case .confirmingCandidate(let i) = phase, let c = candidates[i] else { return }
-        answers[i] = c; advance(from: i)
+        answers[i] = normalised(c, for: i); advance(from: i)
     }
 
     public mutating func appendToCandidate(_ text: String) {
         guard case .confirmingCandidate(let i) = phase, let c = candidates[i] else { return }
-        answers[i] = (c + " " + text).trimmingCharacters(in: .whitespacesAndNewlines); advance(from: i)
+        answers[i] = normalised(c + " " + text, for: i); advance(from: i)
     }
 
     public mutating func edit(_ index: Int, to text: String) {
         guard phase == .review, answers.indices.contains(index) else { return }
-        answers[index] = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        answers[index] = normalised(text, for: index)
     }
 
     public var canSend: Bool {
@@ -84,6 +84,11 @@ public struct IntakeFlow: Equatable, Sendable {
 
     public static func readback(_ candidate: String) -> String {
         "You mentioned \(candidate). Is that right, or would you like to add anything?"
+    }
+
+    private func normalised(_ text: String, for i: Int) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return questions[i].kind == .dateOfBirth ? AnswerFormatting.isoDOB(from: trimmed) ?? trimmed : trimmed
     }
 
     private mutating func advance(from i: Int) {

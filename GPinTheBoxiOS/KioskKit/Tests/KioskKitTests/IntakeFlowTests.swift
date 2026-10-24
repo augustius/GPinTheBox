@@ -36,7 +36,7 @@ func answeredFlow() -> IntakeFlow {
 @Test func canSendNeedsValidPastDOB() {
     var f = answeredFlow()
     f.edit(2, to: "2999-01-01"); #expect(!f.canSend)
-    f.edit(2, to: "1 May 1980"); #expect(!f.canSend)
+    f.edit(2, to: "May 1980"); #expect(!f.canSend)
     f.edit(2, to: "1980-05-01"); f.edit(0, to: " "); #expect(!f.canSend)
 }
 @Test func sendingTransitions() {
@@ -56,4 +56,24 @@ func answeredFlow() -> IntakeFlow {
     #expect(f.phase == .confirmingCandidate(1))
     f.confirmCandidate()
     #expect(f.answers[1] == "DEMO001" && f.phase == .asking(2))
+}
+@Test func typedDOBIsStoredAsISO() {
+    var f = IntakeFlow(); f.start()
+    f.answer("Jane Demo"); f.answer("DEMO001"); f.answer(" 1/5/1980 ")
+    for _ in 3..<10 { f.skip() }
+    #expect(f.answers[2] == "1980-05-01" && f.canSend)
+}
+@Test func editedDOBNormalisesOrKeepsText() {
+    var f = answeredFlow()
+    f.edit(2, to: "1 May 1980"); #expect(f.answers[2] == "1980-05-01" && f.canSend)
+    f.edit(2, to: " sometime in May "); #expect(f.answers[2] == "sometime in May" && !f.canSend)
+    f.edit(0, to: "1/5/1980"); #expect(f.answers[0] == "1/5/1980")
+}
+@Test func confirmedOrAppendedDOBCandidateIsNormalised() {
+    var f = IntakeFlow(); f.start(); f.addCandidates([2: "1980-05-01"])
+    f.answer("Jane Demo"); f.answer("DEMO001"); f.confirmCandidate()
+    #expect(f.answers[2] == "1980-05-01")
+    var g = IntakeFlow(); g.start(); g.addCandidates([2: "1 May"])
+    g.answer("Jane Demo"); g.answer("DEMO001"); g.appendToCandidate("1980")
+    #expect(g.answers[2] == "1980-05-01" && g.phase == .asking(3))
 }

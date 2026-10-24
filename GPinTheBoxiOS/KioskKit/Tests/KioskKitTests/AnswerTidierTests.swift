@@ -42,3 +42,17 @@ func realModelDoesNotInventMissingDay() async throws {
     let result = try await FoundationModelsAnswerModel().tidy("May nineteen eighty", for: KioskQuestions.dateOfBirth)
     #expect(!KioskDate.isValidPastDOB(result), "invented a date: \(result)")
 }
+@Test func prefillValidatesCandidatesByKind() async {
+    let t = AnswerTidier(model: FakeAnswerModel(prefill: [2: "Jane Demo", 1: "demo 001", 5: "  ", 9: "Cough"]))
+    #expect(await t.prefill(transcript: "x", remaining: Array(KioskQuestions.all.dropFirst())) == [1: "DEMO001", 9: "Cough"])
+}
+@Test func prefillNormalisesDOBAndDropsInvalidOrUnaskedKeys() async {
+    let remaining = Array(KioskQuestions.all.dropFirst())
+    #expect(await AnswerTidier(model: FakeAnswerModel(prefill: [2: "1/5/1980"])).prefill(transcript: "x", remaining: remaining) == [2: "1980-05-01"])
+    let t = AnswerTidier(model: FakeAnswerModel(prefill: [0: "Jane Demo", 1: " - ", 2: "2999-01-01", 7: " Penicillin ", 12: "x"]))
+    #expect(await t.prefill(transcript: "x", remaining: remaining) == [7: "Penicillin"])
+}
+@Test func prefillDropsQuestionTextAndQuestions() async {
+    let t = AnswerTidier(model: FakeAnswerModel(prefill: [4: "When did it start?", 5: "describe your symptoms", 9: "Cough?", 8: " Full name. "]))
+    #expect(await t.prefill(transcript: "x", remaining: Array(KioskQuestions.all.dropFirst(4))) == [:])
+}
