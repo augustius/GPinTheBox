@@ -63,16 +63,14 @@ public actor AnswerTidier {
 
     public static func isSkip(_ reply: String) -> Bool {
         let t = reply.replacingOccurrences(of: "\u{2019}", with: "'")
-            .trimmingCharacters(in: CharacterSet(charactersIn: ".!?").union(.whitespacesAndNewlines)).lowercased()
+            .trimmingCharacters(in: CharacterSet(charactersIn: ".!?\u{2026}").union(.whitespacesAndNewlines)).lowercased()
         return skipWords.contains(t)
     }
 
     public func digest(reply: String, target: KioskQuestion, unanswered: [KioskQuestion]) async -> ReplyDigest {
-        let skip = Self.isSkip(reply)
-        if !target.isRequired && skip { return ReplyDigest(values: [:], skippedTarget: true) }
+        if Self.isSkip(reply) { return ReplyDigest(values: [:], skippedTarget: !target.isRequired) }
         let found = await extract(reply: reply, unanswered: unanswered)
         if !found.isEmpty { return ReplyDigest(values: found, skippedTarget: false) }
-        if skip { return ReplyDigest(values: [:], skippedTarget: false) }
         let tidied = await tidy(reply, for: target)
         let value: String?
         switch target.kind {

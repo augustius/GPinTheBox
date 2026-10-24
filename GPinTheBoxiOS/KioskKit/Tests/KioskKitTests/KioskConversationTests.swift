@@ -275,3 +275,12 @@ import Testing
     let optionalCount = c.messages.count; c.rephrase()
     #expect(c.flow.askCounts[3] == 2 && c.messages.count == optionalCount)
 }
+@MainActor @Test func passToIDEndsInCantProceedEvenWhenModelExtractsIt() async {
+    let t = FakeTransport(results: [.success(.ok)])
+    let (c, _) = makeController([], model: FakeAnswerModel(byReply: ["Jane": [0: "Jane"], "Pass": [1: "PASS"]]), transport: t, seed: 1)
+    c.inputMode = .typing; c.start()
+    c.submitTyped("Jane"); await eventually { c.flow.phase == .asking(1) }
+    for n in 1...3 { c.submitTyped("Pass"); await eventually { c.flow.askCounts[1] == n + 1 || c.flow.phase == .cantProceed(1) } }
+    #expect(c.flow.phase == .cantProceed(1) && c.flow.answers[1] == "")
+    #expect(await t.requests.isEmpty)
+}

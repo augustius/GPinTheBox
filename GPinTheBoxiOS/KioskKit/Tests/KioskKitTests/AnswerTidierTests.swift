@@ -83,3 +83,8 @@ let q = KioskQuestions.all
     #expect(AnswerTidier.isSkip("I'd rather not say!") && !AnswerTidier.isSkip("none, but I'm on aspirin"))
     #expect(AnswerTidier.isSkip("I\u{2019}d rather not say"))
 }
+@Test func skipWordToRequiredTargetIsNeverExtracted() async {
+    let t = AnswerTidier(model: FakeAnswerModel(extracted: [1: "PASS", 5: "Pass"]))
+    #expect(await t.digest(reply: "Pass", target: q[1], unanswered: q) == ReplyDigest(values: [:], skippedTarget: false))
+    #expect(AnswerTidier.isSkip("No\u{2026}") && AnswerTidier.isSkip("nope..."))
+}

@@ -10,13 +10,15 @@ struct FakeAnswerModel: AnswerModel {
     var extracted: [Int: String] = [:]
     var delay: Duration? = nil
     var error: (any Error & Sendable)? = nil
+    /// Per-reply extractions; a reply not listed here gets `extracted`.
+    var byReply: [String: [Int: String]] = [:]
 
     func tidy(_ transcript: String, for question: KioskQuestion) async throws -> String {
         try await perform { tidied[transcript] ?? transcript }
     }
     func extract(reply: String, unanswered: [KioskQuestion]) async throws -> [Int: String] {
         let ids = Set(unanswered.map(\.id))
-        return try await perform { extracted.filter { ids.contains($0.key) } }
+        return try await perform { (byReply[reply] ?? extracted).filter { ids.contains($0.key) } }
     }
     private func perform<T>(_ result: () -> T) async throws -> T {
         if let delay { try await Task.sleep(for: delay) }
