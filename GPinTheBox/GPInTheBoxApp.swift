@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 import SwiftData
 import Records
 import Intake
@@ -34,6 +37,14 @@ extension View {
             .tint(Color.careAccent).groupBoxStyle(CareGroupBoxStyle())
             .background(Color.careBackground).preferredColorScheme(.light)
     }
+    /// Minimum window size on macOS. iOS screens are fixed and narrower, so no minimum applies there.
+    @ViewBuilder func macWindowMinimum() -> some View {
+        #if os(macOS)
+        self.frame(minWidth: 1000, minHeight: 700)
+        #else
+        self
+        #endif
+    }
 }
 
 @main struct GPInTheBoxApp: App {
@@ -41,14 +52,16 @@ extension View {
     var body: some Scene {
         WindowGroup("SteadyCare") {
             if let container = model.container {
-                AppEntryView(model: model).careTheme().modelContainer(container).frame(minWidth: 1000, minHeight: 700).task { await model.start() }
+                AppEntryView(model: model).careTheme().modelContainer(container).macWindowMinimum().task { await model.start() }
             } else {
                 ContentUnavailableView("Records could not open", systemImage: "externaldrive.badge.exclamationmark", description: Text(model.startupError ?? "Unknown storage error"))
             }
         }.defaultSize(width: 1200, height: 820)
+        #if os(macOS)
         Settings {
             if model.container != nil { QuestionnaireEditor(model: model).careTheme().frame(width: 700, height: 600) }
         }
+        #endif
     }
 }
 @MainActor @Observable final class AppModel {
@@ -114,40 +127,55 @@ struct AppEntryView: View {
                     showingGP = false
                 })
             } else {
-                VStack(alignment: .leading, spacing: 28) {
-                    Label("SteadyCare", systemImage: "cross.case.fill").font(.largeTitle.bold()).foregroundStyle(Color.careAccent)
-                    Text("Welcome. Choose your pathway.").font(.title2)
-                    Text("Patients complete their intake. GPs manage visits and access patient records.").foregroundStyle(Color.careSecondary)
-                    HStack(alignment: .top, spacing: 24) {
-                        pathway(title: "Patient", icon: "person.crop.rectangle", detail: "Tell your GP why you are visiting. Complete your details and intake questions, then submit your answers to the clinic queue.", button: "Open patient form") {
-                            openURL(URL(string: "http://127.0.0.1:8080/intake")!)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 28) {
+                        Label("SteadyCare", systemImage: "cross.case.fill").font(.largeTitle.bold()).foregroundStyle(Color.careAccent)
+                        Text("Welcome. Choose your pathway.").font(.title2)
+                        Text("Patients complete their intake. GPs manage visits and access patient records.").foregroundStyle(Color.careSecondary)
+                        // Side by side when there's room (Mac, iPad); stacked on narrow iPhone screens.
+                        ViewThatFits(in: .horizontal) {
+                            HStack(alignment: .top, spacing: 24) { pathways(minCardWidth: 340) }
+                            VStack(spacing: 16) { pathways(minCardWidth: nil) }
                         }
-                        pathway(title: "GP workspace", icon: "stethoscope", detail: "View the visit queue, open the patient database, review history, and record the consultation.", button: "Open GP workspace") {
-                            showingGP = true
+                        if let error = model.serverError {
+                            Label(error, systemImage: "wifi.exclamationmark").foregroundStyle(.orange)
+                        } else if let url = model.serverURL {
+                            Text("Patient phone access: \(url)").font(.callout.monospaced()).textSelection(.enabled)
                         }
-                    }
-                    if let error = model.serverError {
-                        Label(error, systemImage: "wifi.exclamationmark").foregroundStyle(.orange)
-                    } else if let url = model.serverURL {
-                        Text("Patient phone access: \(url)").font(.callout.monospaced()).textSelection(.enabled)
-                    }
-                    Text("Synthetic-data demo · Records and consultation tools stay on this Mac.").font(.caption).foregroundStyle(Color.careSecondary)
-                }.padding(48).frame(maxWidth: 1050).frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.careBackground)
+                        Text("Synthetic-data demo · Records and consultation tools stay on this Mac.").font(.caption).foregroundStyle(Color.careSecondary)
+                    }.padding(Self.pagePadding).frame(maxWidth: 1050).frame(maxWidth: .infinity)
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                .background(Color.careBackground)
             }
         }
         .onOpenURL { url in
             if url.scheme == "gpinthebox", url.host == "workspace" { showingGP = true }
         }
     }
-    private func pathway(title: String, icon: String, detail: String, button: String, action: @escaping () -> Void) -> some View {
+    #if os(macOS)
+    private static let pagePadding: CGFloat = 48
+    #else
+    private static let pagePadding: CGFloat = 20
+    #endif
+    /// `minCardWidth` stops the side-by-side layout squeezing cards, so ViewThatFits falls back to stacking.
+    @ViewBuilder private func pathways(minCardWidth: CGFloat?) -> some View {
+        pathway(title: "Patient", icon: "person.crop.rectangle", detail: "Tell your GP why you are visiting. Complete your details and intake questions, then submit your answers to the clinic queue.", button: "Open patient form", minWidth: minCardWidth) {
+            openURL(URL(string: "http://127.0.0.1:8080/intake")!)
+        }
+        pathway(title: "GP workspace", icon: "stethoscope", detail: "View the visit queue, open the patient database, review history, and record the consultation.", button: "Open GP workspace", minWidth: minCardWidth) {
+            showingGP = true
+        }
+    }
+    private func pathway(title: String, icon: String, detail: String, button: String, minWidth: CGFloat?, action: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: 20) {
             Image(systemName: icon).font(.system(size: 36)).foregroundStyle(Color.careAccent)
             Text(title).font(.title.bold())
-            Text(detail).foregroundStyle(Color.careSecondary).frame(maxWidth: .infinity, minHeight: 80, alignment: .topLeading)
+            Text(detail).foregroundStyle(Color.careSecondary).fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, minHeight: minWidth == nil ? nil : 80, alignment: .topLeading)
             Button(button, action: action).buttonStyle(.borderedProminent).controlSize(.large).tint(Color.careAccent)
                 .disabled(title == "Patient" && (model.serverURL == nil || model.serverError != nil))
-        }.padding(28).frame(maxWidth: .infinity, minHeight: 300, alignment: .topLeading)
+        }.padding(minWidth == nil ? 20 : 28).frame(minWidth: minWidth, maxWidth: .infinity, minHeight: minWidth == nil ? nil : 300, alignment: .topLeading)
             .background(Color.careSurface, in: RoundedRectangle(cornerRadius: 20))
             .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.careLine))
     }
@@ -157,6 +185,7 @@ struct ClinicView: View {
     var goHome: () -> Void = {}
     @Environment(\.scenePhase) private var phase
     @State private var showingPatientDatabase = false
+    @State private var showingQuestionnaireEditor = false
     var body: some View {
         NavigationSplitView {
             VStack(alignment: .leading, spacing: 12) {
@@ -169,12 +198,12 @@ struct ClinicView: View {
                 Text("Synthetic demo · Saved on this Mac").font(.caption).foregroundStyle(Color.careSecondary).padding()
             }.padding(.top, 20).background(Color.careSidebar).navigationSplitViewColumnWidth(min: 240, ideal: 270)
         } detail: {
-            VStack(spacing: 0) {
-                if case .unavailable(let reason) = model.availability {
-                    Label(AssistantError.unavailable(reason).userMessage, systemImage: "exclamationmark.triangle").padding().frame(maxWidth: .infinity, alignment: .leading).background(.orange.opacity(0.12))
-                }
-                SelectedPatient(model: model)
-            }
+            #if os(iOS)
+            // A stack in the detail column lets recordings push their detail screen on iPad too.
+            NavigationStack { detailColumn }
+            #else
+            detailColumn
+            #endif
         }
         .sheet(isPresented: $showingPatientDatabase) { PatientDatabaseView(model: model).careTheme() }
         .toolbar {
@@ -183,12 +212,35 @@ struct ClinicView: View {
             ToolbarItem(placement: .automatic) {
                 if let error = model.serverError { Label(error, systemImage: "wifi.exclamationmark").foregroundStyle(.red) }
                 else if let url = model.serverURL {
-                    HStack { Text("Clinic landing: \(url)").font(.callout.monospaced()); Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(url, forType: .string) } label: { Image(systemName: "doc.on.doc") }.help("Copy clinic landing URL") }
+                    HStack { Text("Clinic landing: \(url)").font(.callout.monospaced()); Button { copyToPasteboard(url) } label: { Image(systemName: "doc.on.doc") }.help("Copy clinic landing URL") }
                 } else { Text("Waiting for a LAN address").foregroundStyle(Color.careSecondary) }
             }
+            #if os(macOS)
             ToolbarItem { SettingsLink { Image(systemName: "slider.horizontal.3") }.help("Edit questionnaire") }
+            #else
+            // iOS has no Settings scene, so the questionnaire editor opens as a sheet.
+            ToolbarItem { Button("Edit questionnaire", systemImage: "slider.horizontal.3") { showingQuestionnaireEditor = true } }
+            #endif
         }
+        #if !os(macOS)
+        .sheet(isPresented: $showingQuestionnaireEditor) { QuestionnaireEditor(model: model).careTheme() }
+        #endif
         .onChange(of: phase) { _, value in if value == .active { model.refreshAvailability() } }
+    }
+    private var detailColumn: some View {
+        VStack(spacing: 0) {
+            if case .unavailable(let reason) = model.availability {
+                Label(AssistantError.unavailable(reason).userMessage, systemImage: "exclamationmark.triangle").padding().frame(maxWidth: .infinity, alignment: .leading).background(.orange.opacity(0.12))
+            }
+            SelectedPatient(model: model)
+        }
+    }
+    private func copyToPasteboard(_ string: String) {
+        #if os(macOS)
+        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(string, forType: .string)
+        #else
+        UIPasteboard.general.string = string
+        #endif
     }
 }
 struct QueueSidebar: View {
@@ -250,23 +302,19 @@ struct PatientDetailView: View {
         VStack(alignment: .leading, spacing: 0) {
             if let patient = visit.patient {
                 VStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(patient.fullName).font(.system(size: 34, weight: .bold))
-                            Text("Born \(patient.dateOfBirth) · \(visit.arrivedAt.formatted(date: .abbreviated, time: .shortened))").foregroundStyle(Color.careSecondary)
-                        }
-                        Spacer()
-                        Button("Correct identity") { correcting = true }
-                        Button("Finish visit") { visit.finish(); save() }
-                            .buttonStyle(.borderedProminent).tint(Color.careAccent)
-                            .disabled(visit.status == .done || model.recordingVisitID == visit.id)
+                    // Buttons sit beside the name when there's room, otherwise below it.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .top) { patientHeading(patient); Spacer(); visitActions }
+                        VStack(alignment: .leading, spacing: 12) { patientHeading(patient); HStack { visitActions } }
                     }
                     Text("Saved on this Mac · Patient-reported intake and GP consultation")
                         .font(.caption).foregroundStyle(Color.careSecondary)
                     historyLookupStatus
-                    Picker("Visit section", selection: $section) {
-                        ForEach(VisitSection.allCases) { item in Text(item.rawValue).tag(item) }
-                    }.pickerStyle(.segmented)
+                    // Five segments don't fit on iPhone, so fall back to a menu.
+                    ViewThatFits(in: .horizontal) {
+                        sectionPicker.pickerStyle(.segmented)
+                        sectionPicker.pickerStyle(.menu)
+                    }
                     if model.recordingVisitID == visit.id {
                         HStack {
                             Label(model.microphoneIsRecording ? "Recording in progress" : "Preparing microphone…", systemImage: "record.circle.fill")
@@ -276,13 +324,18 @@ struct PatientDetailView: View {
                         }.padding(10).background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
                     }
                     if let error { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red) }
-                }.padding(24)
+                }.padding(Self.contentPadding)
                 Divider()
                 // Keep each section mounted so notes, drafts and recording survive section
                 // navigation. Removing the entire visit still triggers recording cleanup.
                 ZStack(alignment: .topLeading) {
                     sectionPane(.intake) { intakeSection }
+                    #if os(iOS)
+                    // iOS shows recordings as a List with pushed detail screens.
+                    sectionPane(.recording, scrolls: false) { ConsultationPanel(visit: visit, model: model) }
+                    #else
                     sectionPane(.recording) { ConsultationPanel(visit: visit, model: model) }
+                    #endif
                     sectionPane(.notes) { notesSection(patient: patient) }
                     sectionPane(.history) { historySection(patient: patient) }
                     sectionPane(.assistant) { AssistantPanel(patient: currentSnapshot(for: patient), visitID: visit.id, model: model) }
@@ -292,6 +345,32 @@ struct PatientDetailView: View {
         .onAppear { visit.open(); save() }
         .task(id: visit.patient?.revision) { await recoverHistory() }
         .sheet(isPresented: $correcting) { if let patient = visit.patient { IdentityEditor(patient: patient, model: model).careTheme() } }
+    }
+
+    #if os(macOS)
+    private static let contentPadding: CGFloat = 24
+    #else
+    private static let contentPadding: CGFloat = 16
+    #endif
+
+    private func patientHeading(_ patient: Patient) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(patient.fullName).font(.system(size: 34, weight: .bold))
+            Text("Born \(patient.dateOfBirth) · \(visit.arrivedAt.formatted(date: .abbreviated, time: .shortened))").foregroundStyle(Color.careSecondary)
+        }
+    }
+
+    @ViewBuilder private var visitActions: some View {
+        Button("Correct identity") { correcting = true }
+        Button("Finish visit") { visit.finish(); save() }
+            .buttonStyle(.borderedProminent).tint(Color.careAccent)
+            .disabled(visit.status == .done || model.recordingVisitID == visit.id)
+    }
+
+    private var sectionPicker: some View {
+        Picker("Visit section", selection: $section) {
+            ForEach(VisitSection.allCases) { item in Text(item.rawValue).tag(item) }
+        }
     }
 
     private var historyLookupStatus: some View {
@@ -338,9 +417,16 @@ struct PatientDetailView: View {
         }
     }
 
-    private func sectionPane<Content: View>(_ value: VisitSection, @ViewBuilder content: () -> Content) -> some View {
-        ScrollView {
-            content().frame(maxWidth: .infinity, alignment: .leading).padding(24)
+    /// Pass `scrolls: false` for content that is already a scrolling container, such as a List.
+    private func sectionPane<Content: View>(_ value: VisitSection, scrolls: Bool = true, @ViewBuilder content: () -> Content) -> some View {
+        Group {
+            if scrolls {
+                ScrollView {
+                    content().frame(maxWidth: .infinity, alignment: .leading).padding(Self.contentPadding)
+                }
+            } else {
+                content().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
         }
         .opacity(section == value ? 1 : 0)
         .allowsHitTesting(section == value)

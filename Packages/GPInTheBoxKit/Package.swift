@@ -1,6 +1,6 @@
 // swift-tools-version: 6.2
 import PackageDescription
-let package = Package(name: "GPInTheBoxKit", platforms: [.macOS("26.0")], products: [
+let package = Package(name: "GPInTheBoxKit", platforms: [.iOS("26.0"), .macOS("26.0")], products: [
     .library(name: "Records", targets: ["Records"]),
     .library(name: "Intake", targets: ["Intake"]),
     .library(name: "Assistant", targets: ["Assistant"]),

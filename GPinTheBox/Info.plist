@@ -1,3 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict><key>CFBundleDisplayName</key><string>SteadyCare</string><key>CFBundleName</key><string>SteadyCare</string><key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>com.gpinthebox.workspace</string><key>CFBundleURLSchemes</key><array><string>gpinthebox</string></array></dict></array><key>NSBonjourServices</key><array><string>_steadycare._tcp</string></array><key>NSLocalNetworkUsageDescription</key><string>SteadyCare receives intake answers from the waiting-room kiosk on this network.</string></dict></plist>
+<plist version="1.0">
+<dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.gpinthebox.workspace</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>gpinthebox</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_steadycare._tcp</string>
+	</array>
+</dict>
+</plist>

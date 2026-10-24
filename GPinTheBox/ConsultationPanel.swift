@@ -1,4 +1,9 @@
 import SwiftUI
+#if canImport(AppKit)
+import AppKit
+#elseif canImport(UIKit)
+import UIKit
+#endif
 import SwiftData
 import Records
 import Assistant
@@ -22,6 +27,8 @@ struct ConsultationPanel: View {
     @State private var showArchived = false
     @State private var showSpeechSettings = false
     @AppStorage("localSpeech.separateSpeakers") private var separateSpeakers = false
+    /// iOS only: the recording pushed onto the navigation stack as a detail screen.
+    @State private var openConsultationID: UUID?
 
     init(visit: Visit, model: AppModel) {
         self.visit = visit; self.model = model
@@ -29,106 +36,11 @@ struct ConsultationPanel: View {
         _consultations = Query(filter: #Predicate<Consultation> { $0.visitID == visitID }, sort: \Consultation.startedAt, order: .reverse)
     }
     var body: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Record once the patient is seated with the doctor. Transcription and summaries run on this Mac. Audio is deleted after the transcript and requested speaker analysis are saved.")
-                    .font(.callout).foregroundStyle(Color.careSecondary)
-                HStack {
-                    Picker("Spoken English", selection: $locale) {
-                        Text("English (Australia)").tag("en-AU")
-                        Text("English (US)").tag("en-US")
-                    }.frame(maxWidth: 310).disabled(working != nil || recorder.isRecording)
-                    Spacer()
-                    if recorder.isRecording {
-                        Label("Recording · \(elapsed)", systemImage: "record.circle.fill").foregroundStyle(.red).font(.headline).accessibilityLabel("Recording in progress")
-                        Button("Stop & transcribe") { stopAndTranscribe() }.buttonStyle(.borderedProminent).tint(.red)
-                    } else {
-                        Button { startRecording() } label: { Label(consultations.isEmpty ? "Start recording" : "Record again", systemImage: "mic.fill") }
-                            .buttonStyle(.borderedProminent).tint(Color.careAccent)
-                            .disabled(!consent || working != nil || model.recordingVisitID != nil || visit.status == .done)
-                    }
-                }
-                if !recorder.isRecording {
-                    Toggle("The patient has agreed to this consultation being recorded.", isOn: $consent)
-                        .disabled(working != nil || visit.status == .done)
-                    if visit.status == .done { Text("This visit is finished. Recording is available during an active consultation.").font(.caption).foregroundStyle(Color.careSecondary) }
-                }
-                HStack {
-                    Button("Speech glossary & setup…") { showSpeechSettings = true }
-                    Toggle("Separate speakers locally (Core ML)", isOn: $separateSpeakers)
-                }.disabled(working != nil || recorder.isRecording)
-                if separateSpeakers {
-                    Text("Download the speaker model once in Speech glossary & setup. Speaker labels are estimates; assign Doctor and Patient after checking the conversation.").font(.caption).foregroundStyle(Color.careSecondary)
-                }
-                if let working {
-                    HStack { ProgressView().controlSize(.small); Text(working); Button("Cancel") { cancelOperation() } }
-                }
-                if let error { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).textSelection(.enabled) }
-                if let recordingError = recorder.lastError { Text(recordingError).foregroundStyle(.orange) }
-                if !consultations.isEmpty && !recorder.isRecording {
-                    Text("Record again starts a new attempt, even if the previous one was archived. Check patient agreement first. Re-record archives an existing attempt before starting fresh.")
-                        .font(.caption).foregroundStyle(Color.careSecondary)
-                }
-                Toggle("Show archived recordings", isOn: $showArchived)
-                ForEach(consultations.filter { showArchived || $0.archivedAt == nil }) { consultation in
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Text(consultation.startedAt.formatted(date: .abbreviated, time: .shortened)).font(.headline)
-                            Text(consultation.localeIdentifier == "en-US" ? "English (US)" : "English (Australia)").font(.caption).foregroundStyle(Color.careSecondary)
-                            Spacer()
-                            if consultation.approvedSnapshot() != nil { Label("Approved", systemImage: "checkmark.seal.fill").foregroundStyle(Color.careAccent) }
-                        }
-                        if consultation.archivedAt != nil {
-                            Label("Archived — excluded from patient summaries and answers", systemImage: "archivebox")
-                            Button("Restore recording") { setArchived(consultation, archived: false) }
-                                .disabled(working != nil || recorder.isRecording)
-                            if !consultation.transcript.isEmpty {
-                                DisclosureGroup("Archived transcript and summary") {
-                                    Text(consultation.transcript).textSelection(.enabled)
-                                    Text(consultation.approvedSummary.isEmpty ? consultation.draftSummary : consultation.approvedSummary).textSelection(.enabled)
-                                }
-                            }
-                        } else {
-                        HStack {
-                            Button("Re-record") { rerecord(consultation) }
-                                .disabled(!consent || model.recordingVisitID != nil || visit.status == .done)
-                            Button("Delete (archive)") { setArchived(consultation, archived: true) }
-                            Text("Keeps saved content. You can restore it or start a new recording.").font(.caption).foregroundStyle(Color.careSecondary)
-                        }.disabled(working != nil || recorder.isRecording)
-                        if consultation.wasInterrupted {
-                            Text("This recording ended early or was interrupted. Its transcript may cover only part of the consultation.").font(.caption).foregroundStyle(.orange)
-                        }
-                        if consultation.transcript.isEmpty {
-                            if active?.id != consultation.id || !recorder.isRecording {
-                                Text(consultation.endedAt == nil ? "Recording interrupted or not started. Any captured audio is retained for recovery." : "Audio retained until transcription is saved.").foregroundStyle(Color.careSecondary)
-                                HStack {
-                                    Button("Transcribe recording") { transcribe(consultation) }.disabled(working != nil || recorder.isRecording)
-                                }
-                            }
-                        } else {
-                            ConsultationReview(consultation: consultation, model: model)
-                                .disabled(working != nil || recorder.isRecording || consultation.diarizationStatus == .pending || consultation.diarizationStatus == .failed)
-                            if consultation.audioFileName != nil {
-                                if consultation.diarizationStatus == .pending || consultation.diarizationStatus == .failed {
-                                    Text("Transcript saved. Speaker separation is incomplete; audio is retained for retry.").font(.caption).foregroundStyle(.orange)
-                                    HStack {
-                                        Button("Retry speaker separation") { retrySpeakers(consultation) }.disabled(consultation.conversationTurns.isEmpty)
-                                        Button("Keep transcript only & delete audio") { skipSpeakers(consultation) }
-                                    }.disabled(working != nil || recorder.isRecording)
-                                } else {
-                                    Text("The transcript is saved, but audio cleanup is still pending.").font(.caption).foregroundStyle(.orange)
-                                    Button("Delete saved audio") { deleteSavedAudio(consultation) }.disabled(working != nil || recorder.isRecording)
-                                }
-                            } else { Text("Transcript saved · original audio deleted").font(.caption).foregroundStyle(Color.careSecondary) }
-                        }
-                        }
-                    }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.careAccent.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
-                }
-            }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
-        } label: { Label("Consultation recording", systemImage: "waveform") }
+        layout
         .sheet(isPresented: $showSpeechSettings) { SpeechSettingsView() }
-        .onDisappear { stopForBoundary() }
+        // Pushing a recording's detail screen hides this view without leaving the visit,
+        // so only stop the microphone and processing when no detail screen is open.
+        .onDisappear { if openConsultationID == nil { stopForBoundary() } }
         .onChange(of: recorder.isRecording) { wasRecording, isRecording in
             if active != nil { model.microphoneIsRecording = isRecording }
             if wasRecording && !isRecording {
@@ -146,9 +58,182 @@ struct ConsultationPanel: View {
                 deleteSavedAudio(consultation)
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in stopForBoundary() }
+        .onReceive(NotificationCenter.default.publisher(for: Self.willTerminateNotification)) { _ in stopForBoundary() }
 
     }
+    #if canImport(AppKit)
+    private static let willTerminateNotification = NSApplication.willTerminateNotification
+    #else
+    private static let willTerminateNotification = UIApplication.willTerminateNotification
+    #endif
+    private var visibleConsultations: [Consultation] { consultations.filter { showArchived || $0.archivedAt == nil } }
+
+    @ViewBuilder private var layout: some View {
+        #if os(iOS)
+        // iOS: recording controls and a list of recordings; each recording opens as a detail screen.
+        List {
+            Section { controls } header: { Label("Consultation recording", systemImage: "waveform") }
+            Section("Recordings") {
+                Toggle("Show archived recordings", isOn: $showArchived)
+                ForEach(visibleConsultations) { consultation in
+                    Button { openConsultationID = consultation.id } label: {
+                        HStack {
+                            consultationRow(consultation)
+                            Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+                        }.contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(recorder.isRecording)
+                }
+                if visibleConsultations.isEmpty {
+                    Text("No recordings yet.").foregroundStyle(Color.careSecondary)
+                }
+            }
+        }
+        .buttonStyle(.borderless)
+        .scrollContentBackground(.hidden)
+        .navigationDestination(item: $openConsultationID) { id in
+            Group {
+                if let consultation = consultations.first(where: { $0.id == id }) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 12) { consultationDetail(consultation) }
+                            .padding().frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .navigationTitle(consultation.startedAt.formatted(date: .abbreviated, time: .shortened))
+                } else {
+                    ContentUnavailableView("Recording unavailable", systemImage: "waveform.slash")
+                }
+            }
+            .background(Color.careBackground)
+            // Popping clears the selection first; disappearing while still selected means
+            // the visit itself was removed, so apply the same cleanup as leaving the panel.
+            .onDisappear { if openConsultationID != nil { stopForBoundary() } }
+        }
+        #else
+        GroupBox {
+            VStack(alignment: .leading, spacing: 16) {
+                controls
+                Toggle("Show archived recordings", isOn: $showArchived)
+                ForEach(visibleConsultations) { consultation in
+                    VStack(alignment: .leading, spacing: 12) {
+                        consultationRow(consultation)
+                        consultationDetail(consultation)
+                    }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.careAccent.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+                }
+            }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+        } label: { Label("Consultation recording", systemImage: "waveform") }
+        #endif
+    }
+
+    /// Top-level views become separate rows in the iOS list and stack vertically on macOS.
+    @ViewBuilder private var controls: some View {
+        Text("Record once the patient is seated with the doctor. Transcription and summaries run on this Mac. Audio is deleted after the transcript and requested speaker analysis are saved.")
+            .font(.callout).foregroundStyle(Color.careSecondary)
+        HStack {
+            Picker("Spoken English", selection: $locale) {
+                Text("English (Australia)").tag("en-AU")
+                Text("English (US)").tag("en-US")
+            }.frame(maxWidth: 310).disabled(working != nil || recorder.isRecording)
+            Spacer()
+            if recorder.isRecording {
+                Label("Recording · \(elapsed)", systemImage: "record.circle.fill").foregroundStyle(.red).font(.headline).accessibilityLabel("Recording in progress")
+                Button("Stop & transcribe") { stopAndTranscribe() }.buttonStyle(.borderedProminent).tint(.red)
+            } else {
+                Button { startRecording() } label: { Label(consultations.isEmpty ? "Start recording" : "Record again", systemImage: "mic.fill") }
+                    .buttonStyle(.borderedProminent).tint(Color.careAccent)
+                    .disabled(!consent || working != nil || model.recordingVisitID != nil || visit.status == .done)
+            }
+        }
+        if !recorder.isRecording {
+            Toggle("The patient has agreed to this consultation being recorded.", isOn: $consent)
+                .disabled(working != nil || visit.status == .done)
+            if visit.status == .done { Text("This visit is finished. Recording is available during an active consultation.").font(.caption).foregroundStyle(Color.careSecondary) }
+        }
+        HStack {
+            Button("Speech glossary & setup…") { showSpeechSettings = true }
+            Toggle("Separate speakers locally (Core ML)", isOn: $separateSpeakers)
+        }.disabled(working != nil || recorder.isRecording)
+        if separateSpeakers {
+            Text("Download the speaker model once in Speech glossary & setup. Speaker labels are estimates; assign Doctor and Patient after checking the conversation.").font(.caption).foregroundStyle(Color.careSecondary)
+        }
+        if let working {
+            HStack { ProgressView().controlSize(.small); Text(working); Button("Cancel") { cancelOperation() } }
+        }
+        if let error { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).textSelection(.enabled) }
+        if let recordingError = recorder.lastError { Text(recordingError).foregroundStyle(.orange) }
+        if !consultations.isEmpty && !recorder.isRecording {
+            Text("Record again starts a new attempt, even if the previous one was archived. Check patient agreement first. Re-record archives an existing attempt before starting fresh.")
+                .font(.caption).foregroundStyle(Color.careSecondary)
+        }
+    }
+
+    private func consultationRow(_ consultation: Consultation) -> some View {
+        HStack {
+            Text(consultation.startedAt.formatted(date: .abbreviated, time: .shortened)).font(.headline)
+            Text(consultation.localeIdentifier == "en-US" ? "English (US)" : "English (Australia)").font(.caption).foregroundStyle(Color.careSecondary)
+            Spacer()
+            #if os(iOS)
+            if consultation.archivedAt != nil { Label("Archived", systemImage: "archivebox").foregroundStyle(Color.careSecondary) }
+            #endif
+            if consultation.approvedSnapshot() != nil { Label("Approved", systemImage: "checkmark.seal.fill").foregroundStyle(Color.careAccent) }
+        }
+    }
+
+    @ViewBuilder private func consultationDetail(_ consultation: Consultation) -> some View {
+        if consultation.archivedAt != nil {
+            Label("Archived — excluded from patient summaries and answers", systemImage: "archivebox")
+            Button("Restore recording") { setArchived(consultation, archived: false) }
+                .disabled(working != nil || recorder.isRecording)
+            if !consultation.transcript.isEmpty {
+                DisclosureGroup("Archived transcript and summary") {
+                    Text(consultation.transcript).textSelection(.enabled)
+                    Text(consultation.approvedSummary.isEmpty ? consultation.draftSummary : consultation.approvedSummary).textSelection(.enabled)
+                }
+            }
+        } else {
+            HStack {
+                Button("Re-record") { rerecord(consultation) }
+                    .disabled(!consent || model.recordingVisitID != nil || visit.status == .done)
+                Button("Delete (archive)") { setArchived(consultation, archived: true) }
+                Text("Keeps saved content. You can restore it or start a new recording.").font(.caption).foregroundStyle(Color.careSecondary)
+            }.disabled(working != nil || recorder.isRecording)
+            if consultation.wasInterrupted {
+                Text("This recording ended early or was interrupted. Its transcript may cover only part of the consultation.").font(.caption).foregroundStyle(.orange)
+            }
+            if consultation.transcript.isEmpty {
+                if active?.id != consultation.id || !recorder.isRecording {
+                    Text(consultation.endedAt == nil ? "Recording interrupted or not started. Any captured audio is retained for recovery." : "Audio retained until transcription is saved.").foregroundStyle(Color.careSecondary)
+                    HStack {
+                        Button("Transcribe recording") { transcribe(consultation) }.disabled(working != nil || recorder.isRecording)
+                    }
+                }
+            } else {
+                ConsultationReview(consultation: consultation, model: model)
+                    .disabled(working != nil || recorder.isRecording || consultation.diarizationStatus == .pending || consultation.diarizationStatus == .failed)
+                if consultation.audioFileName != nil {
+                    if consultation.diarizationStatus == .pending || consultation.diarizationStatus == .failed {
+                        Text("Transcript saved. Speaker separation is incomplete; audio is retained for retry.").font(.caption).foregroundStyle(.orange)
+                        HStack {
+                            Button("Retry speaker separation") { retrySpeakers(consultation) }.disabled(consultation.conversationTurns.isEmpty)
+                            Button("Keep transcript only & delete audio") { skipSpeakers(consultation) }
+                        }.disabled(working != nil || recorder.isRecording)
+                    } else {
+                        Text("The transcript is saved, but audio cleanup is still pending.").font(.caption).foregroundStyle(.orange)
+                        Button("Delete saved audio") { deleteSavedAudio(consultation) }.disabled(working != nil || recorder.isRecording)
+                    }
+                } else { Text("Transcript saved · original audio deleted").font(.caption).foregroundStyle(Color.careSecondary) }
+            }
+        }
+        #if os(iOS)
+        // Processing progress and errors also show here, since the controls are a screen back.
+        if let working {
+            HStack { ProgressView().controlSize(.small); Text(working); Button("Cancel") { cancelOperation() } }
+        }
+        if let error { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).textSelection(.enabled) }
+        #endif
+    }
+
     private var elapsed: String { String(format: "%02d:%02d", Int(recorder.duration) / 60, Int(recorder.duration) % 60) }
     private func startRecording() {
         guard consent, visit.status != .done, model.recordingVisitID == nil, let patient = visit.patient else { return }
@@ -307,6 +392,7 @@ struct ConsultationPanel: View {
                 try ConsultationMutations.markStopped(context: context, consultation: consultation)
             }
             try ConsultationMutations.setArchived(context: context, consultation: consultation, archived: true)
+            openConsultationID = nil // iOS: return to the recording controls
             startRecording()
         } catch { self.error = error.localizedDescription }
     }

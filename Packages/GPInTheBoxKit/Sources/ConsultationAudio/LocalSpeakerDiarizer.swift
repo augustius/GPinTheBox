@@ -41,6 +41,8 @@ public enum LocalDiarizationError: Error, LocalizedError, Equatable {
 /// Runs only a caller-selected local Python executable and local model. No hosted API or shell.
 public struct LocalSpeakerDiarizer: Sendable {
     public init() {}
+    #if os(macOS)
+    // Process (subprocess launching) is macOS-only; iOS builds keep only the decoding helpers.
     public func diarize(audioURL: URL, configuration: DiarizationConfiguration) async throws -> [SpeakerInterval] {
         try Task.checkCancellation()
         let files = FileManager.default
@@ -89,6 +91,7 @@ public struct LocalSpeakerDiarizer: Sendable {
         guard bytes <= 2_000_000 else { throw LocalDiarizationError.outputTooLarge }
         return try Self.decodeIntervals(Data(contentsOf: outputURL))
     }
+    #endif
 
     public static func decodeIntervals(_ data: Data) throws -> [SpeakerInterval] {
         guard data.count <= 2_000_000 else { throw LocalDiarizationError.outputTooLarge }

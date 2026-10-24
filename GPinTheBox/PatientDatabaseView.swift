@@ -27,7 +27,7 @@ struct PatientDatabaseView: View {
                 Button("Close") { dismiss() }
             }.padding()
             if let message { Text(message).font(.callout).padding(.horizontal).textSelection(.enabled) }
-            HSplitView {
+            SplitLayout {
                 VStack(alignment: .leading) {
                     TextField("First name, last name, or Medicare number", text: $query).textFieldStyle(.roundedBorder)
                     Text("\(patients.count) imported patients").font(.caption).foregroundStyle(Color.careSecondary)
@@ -48,7 +48,7 @@ struct PatientDatabaseView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-        }.frame(minWidth: 1000, minHeight: 700)
+        }.macWindowMinimum()
         .fileImporter(isPresented: $choosingFiles, allowedContentTypes: [.commaSeparatedText], allowsMultipleSelection: true) { result in
             Task { await importFiles(result) }
         }
@@ -76,6 +76,26 @@ struct PatientDatabaseView: View {
             importRevision += 1
             message = "Imported or updated \(report.patients) patients and \(report.notes) consultation notes."
         } catch { message = "Import failed: \(error.localizedDescription)" }
+    }
+}
+
+/// A resizable `HSplitView` on macOS; iOS has no `HSplitView`, so it falls back to a fixed side-by-side layout.
+private struct SplitLayout<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        #if os(macOS)
+        HSplitView { content }
+        #else
+        HStack(spacing: 0) {
+            Group(subviews: content) { subviews in
+                ForEach(subviews.indices, id: \.self) { index in
+                    if index > 0 { Divider() }
+                    subviews[index]
+                }
+            }
+        }
+        #endif
     }
 }
 

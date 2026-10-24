@@ -47,7 +47,7 @@ public struct FoundationModelsAssistant: AssistantModel {
         let model = SystemLanguageModel.default
         do {
             let reserve = 900
-            if #available(macOS 26.4, *) {
+            if #available(macOS 26.4, iOS 26.4, *) {
                 let input = try await model.tokenCount(for: Prompt(prompt))
                 let system = try await model.tokenCount(for: Instructions(instructions))
                 let schema = try await model.tokenCount(for: T.generationSchema)
@@ -63,7 +63,7 @@ public struct FoundationModelsAssistant: AssistantModel {
         } catch is CancellationError { throw CancellationError() }
         catch let error as AssistantError { throw error }
         catch {
-            if #available(macOS 27.0, *), let error = error as? LanguageModelError {
+            if #available(macOS 27.0, iOS 27.0, *), let error = error as? LanguageModelError {
                 switch error {
                 case .contextSizeExceeded: throw AssistantError.contextOverflow
                 case .guardrailViolation, .refusal: throw AssistantError.guardrailViolation
