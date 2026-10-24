@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import KioskProtocol
 
 public struct KioskTimings: Sendable {
     public var silence, idle, idleGrace, doneReset: Duration

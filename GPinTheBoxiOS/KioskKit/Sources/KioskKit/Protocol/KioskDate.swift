@@ -1,3 +1,4 @@
+// Kiosk wire contract. Duplicated in GPinTheBoxiOS/KioskKit/Sources/KioskKit/Protocol and Packages/GPInTheBoxKit/Sources/Records/KioskProtocol — keep both copies identical.
 import Foundation
 
 public enum KioskDate {

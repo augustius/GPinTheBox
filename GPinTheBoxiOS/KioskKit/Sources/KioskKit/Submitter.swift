@@ -1,4 +1,3 @@
-import KioskProtocol
 
 public protocol KioskTransport: Sendable {
     func send(_ request: KioskRequest) async throws -> KioskResponse

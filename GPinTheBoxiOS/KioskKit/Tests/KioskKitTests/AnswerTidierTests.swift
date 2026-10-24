@@ -1,5 +1,4 @@
 import Testing
-import KioskProtocol
 @testable import KioskKit
 
 @Test func tidyUsesModelAndNormalisesID() async {

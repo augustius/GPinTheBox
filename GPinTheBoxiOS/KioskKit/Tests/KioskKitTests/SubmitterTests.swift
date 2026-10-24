@@ -1,6 +1,5 @@
 import Testing
 import Foundation
-import KioskProtocol
 @testable import KioskKit
 
 private let req = KioskRequest(submissionID: UUID(), answers: [.init(q: "Full name", a: "Jane Demo")])

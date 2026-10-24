@@ -1,5 +1,4 @@
 import Foundation
-import KioskProtocol
 
 public protocol AnswerModel: Sendable {
     var isAvailable: Bool { get }

@@ -1,6 +1,5 @@
 import Foundation
 import SwiftData
-import KioskProtocol
 
 public enum KioskQuestionID {
     /// Deterministic question ID for a kiosk question index: 00000000-0000-0000-0000-<index, 12 digits>.

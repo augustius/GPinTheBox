@@ -1,6 +1,5 @@
 import SwiftUI
 import KioskKit
-import KioskProtocol
 
 struct QuestionView: View {
     let controller: KioskController

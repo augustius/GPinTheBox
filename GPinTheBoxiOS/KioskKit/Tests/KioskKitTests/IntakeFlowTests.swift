@@ -1,6 +1,5 @@
 import Testing
 import Foundation
-import KioskProtocol
 @testable import KioskKit
 
 func answeredFlow() -> IntakeFlow {

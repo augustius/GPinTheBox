@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import KioskProtocol
+@testable import KioskKit
 
 @Test func questionsMatchSpecByteForByte() {
     #expect(KioskQuestions.all.map(\.text) == [

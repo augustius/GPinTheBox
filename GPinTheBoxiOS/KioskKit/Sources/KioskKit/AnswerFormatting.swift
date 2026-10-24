@@ -1,5 +1,4 @@
 import Foundation
-import KioskProtocol
 
 public enum AnswerFormatting {
     /// "1 May 1980" for a stored, valid, past `yyyy-MM-dd` date; nil otherwise, so callers show the raw text.

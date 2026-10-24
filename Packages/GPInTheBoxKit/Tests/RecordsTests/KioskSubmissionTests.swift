@@ -1,7 +1,6 @@
 import Testing
 import Foundation
 import SwiftData
-import KioskProtocol
 @testable import Records
 
 func kioskAnswers(id: String = "demo 001", dob: String = "1980-05-01", name: String = " Jane Demo ") -> [KioskAnswer] {

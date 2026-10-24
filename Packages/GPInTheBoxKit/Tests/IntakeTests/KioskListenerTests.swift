@@ -1,7 +1,6 @@
 import Testing
 import Foundation
 import Network
-import KioskProtocol
 import Records
 @testable import Intake
 

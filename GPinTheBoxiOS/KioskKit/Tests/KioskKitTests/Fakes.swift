@@ -1,6 +1,5 @@
 import Synchronization
 import Testing
-import KioskProtocol
 @testable import KioskKit
 
 struct FakeError: Error {}

@@ -151,10 +151,11 @@ Answers are tidied on the device by Apple's Foundation Models; if the model is u
 ### Tests
 
 ```sh
-swift test --package-path Packages/KioskProtocol
 swift test --package-path GPinTheBoxiOS/KioskKit
 swift test --package-path Packages/GPInTheBoxKit
 ```
+
+The kiosk wire contract (questions, messages, framing, DOB rule) is duplicated in `GPinTheBoxiOS/KioskKit/Sources/KioskKit/Protocol/` and `Packages/GPInTheBoxKit/Sources/Records/KioskProtocol/`. Keep the two copies identical; each package's `KioskProtocolTests` pins the question strings byte for byte.
 
 ### Known consequences
 

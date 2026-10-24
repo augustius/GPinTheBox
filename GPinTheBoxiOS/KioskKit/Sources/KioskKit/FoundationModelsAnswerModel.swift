@@ -1,6 +1,5 @@
 import Foundation
 import FoundationModels
-import KioskProtocol
 
 @Generable private struct TidiedText { var answer: String }
 @Generable private struct TidiedID { @Guide(description: "Spell the ID as letters and digits.") var answer: String }

@@ -1,7 +1,6 @@
 import Foundation
 import Network
 import Synchronization
-import KioskProtocol
 import Records
 
 /// Accepts framed `KioskRequest`s from the waiting-room kiosk over TCP, advertised over Bonjour.

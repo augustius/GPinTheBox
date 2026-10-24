@@ -1,5 +1,4 @@
 import Foundation
-import KioskProtocol
 
 public enum FlowPhase: Equatable, Sendable { case welcome, asking(Int), confirmingCandidate(Int), review, sending, sendFailed(String), done }
 

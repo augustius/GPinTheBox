@@ -1,6 +1,5 @@
 import SwiftUI
 import KioskKit
-import KioskProtocol
 
 struct ReviewView: View {
     let controller: KioskController

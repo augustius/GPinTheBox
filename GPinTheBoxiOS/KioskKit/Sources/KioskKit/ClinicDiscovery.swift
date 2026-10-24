@@ -1,7 +1,6 @@
 import Foundation
 import Network
 import Observation
-import KioskProtocol
 
 public enum ClinicChoice: Equatable, Sendable { case none, connected(String), needsPicker([String]) }
 

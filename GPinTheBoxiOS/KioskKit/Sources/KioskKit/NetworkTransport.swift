@@ -1,6 +1,5 @@
 import Foundation
 import Network
-import KioskProtocol
 
 public struct NetworkTransport: KioskTransport {
     enum TransportError: Error { case closed }
