@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import SwiftData
 import Hummingbird
 import HummingbirdTesting
 import Records
@@ -122,4 +123,66 @@ actor Receipts { var all: [SubmissionReceipt] = []; func append(_ r: SubmissionR
         let second = try await client.execute(uri: "/", method: .get) { String(buffer: $0.body) }
         #expect(first != second)
     }
+}
+
+@Test func returningPatientFormRecoversPreviousHistory() async throws {
+    let container = try GPInTheBoxSchema.makeContainer(inMemory: true)
+    let store = RecordStore(modelContainer: container)
+    let version = try await store.publishQuestionnaire(q.questions)
+    let receipts = Receipts()
+    let app = Application(router: IntakeServer(store: store, onSubmission: { await receipts.append($0) }).buildRouter())
+    let answerKey = IntakeForm.fieldName(for: version.questions[0].id)
+    var initial = fields(version)
+    initial["fullName"] = "Returning Patient — Synthetic Test"
+    initial[answerKey] = "Previous visit: synthetic cough for three days"
+    let initialBody = encode(initial)
+    try await app.test(.router) { client in
+        try await client.execute(uri: "/submit", method: .post,
+                                 headers: [.contentType: "application/x-www-form-urlencoded"],
+                                 body: .init(string: initialBody)) { response in
+            #expect(response.status == .seeOther)
+            #expect(response.headers[.location] == "/thanks")
+        }
+    }
+    let first = try #require(await receipts.all.first)
+    #expect(first.isNewPatient)
+    #expect(try await store.history(patientID: first.patientID, beforeVisitID: first.visitID).visits.isEmpty)
+    // Simulate the GP completing the original consultation before the return visit.
+    try await MainActor.run {
+        let context = ModelContext(container)
+        let visitID = first.visitID
+        let visit = try #require(context.fetch(FetchDescriptor<Visit>(predicate: #Predicate { $0.id == visitID })).first)
+        visit.gpNote = "Synthetic previous GP note: review cough at next visit."
+        visit.noteUpdatedAt = .now
+        visit.finish()
+        try context.save()
+    }
+    var returning = fields(version)
+    returning["fullName"] = "Returning Patient — Synthetic Test"
+    returning["medicareID"] = "AB123"
+    returning[answerKey] = "Return visit: synthetic follow-up"
+    let returningBody = encode(returning)
+    try await app.test(.router) { client in
+        try await client.execute(uri: "/submit", method: .post,
+                                 headers: [.contentType: "application/x-www-form-urlencoded"],
+                                 body: .init(string: returningBody)) { response in
+            #expect(response.status == .seeOther)
+            #expect(response.headers[.location] == "/thanks")
+        }
+    }
+    let all = await receipts.all
+    #expect(all.count == 2)
+    let second = try #require(all.last)
+    #expect(!second.isNewPatient)
+    #expect(second.patientID == first.patientID)
+    #expect(second.visitID != first.visitID)
+    // Use a fresh store context, as the GP workspace does after form submission.
+    let workspaceStore = RecordStore(modelContainer: container)
+    let history = try await workspaceStore.history(patientID: second.patientID, beforeVisitID: second.visitID)
+    #expect(history.visits.count == 1)
+    let recovered = try #require(history.visits.first)
+    #expect(recovered.id == first.visitID)
+    #expect(recovered.answers.first?.value == "Previous visit: synthetic cough for three days")
+    #expect(recovered.gpNote == "Synthetic previous GP note: review cough at next visit.")
+    #expect(!history.visits.contains { $0.id == second.visitID })
 }

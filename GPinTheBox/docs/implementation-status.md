@@ -48,3 +48,21 @@ Validation logs on this development machine: `/tmp/gp-tests-final.log`, `/tmp/gp
 ## Remaining environmental checks
 
 A physical iPhone connection on the same Wi-Fi, notification delivery when permission is granted, and the unavailable-model UI with Apple Intelligence switched off require device/user settings validation. Automated unavailable-model behavior is covered without changing system settings. No clinical accuracy claim is made by these tests.
+
+## Consultation recording extension — 24 October 2026
+
+Implemented with separate Records, Audio, and Assistant subagents and native UI integration:
+
+- Explicit consent-confirmed Mac microphone start, visible recording state/timer, and Stop & transcribe.
+- On-device Apple Speech transcription for English (Australia) and English (US), with no cloud fallback.
+- Durable transcript-first save followed by audio deletion; retained recording recovery on failures/cancellation.
+- Editable transcript and summary draft, explicit doctor approval, and transcript-revision checks against stale output.
+- Approved summaries included in future visit retrieval/follow-ups with distinct GP-reviewed provenance; raw transcripts excluded from automatic record retrieval.
+- Existing-store migration preserving prior patients/visits/notes tested.
+- Interrupted recordings marked as potentially partial, including future approved-summary evidence.
+
+Synthetic speech was transcribed successfully on this Mac in both English variants without using the microphone. A synthetic consultation passed actual Apple Foundation Models summarisation with strict evidence validation. Apple guardrails remain enabled; refusal leaves the transcript available for manual review/summary.
+
+Actual microphone capture, microphone-denial UI, and a full spoken consultation remain manual checks. The implementation does not claim clinical transcription accuracy or automatic doctor/patient speaker identification.
+
+Final consultation checks: **76 automated unit/regression tests passed** (26 Records, 9 Intake, 7 Audio, 34 Assistant). The gated real consultation model test also passed separately, for 77 verified tests across the runs. Native macOS build succeeded. Both synthetic on-device speech locale probes passed. The updated app opened against the existing demo database with both prior visits preserved, and its consent-gated recording controls plus both language choices were verified without starting the microphone.

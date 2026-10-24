@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 
 public enum GPInTheBoxSchema {
-    public static var schema: Schema { Schema([Patient.self, Visit.self, QuestionnaireVersion.self, StoredSubmission.self]) }
+    public static var schema: Schema { Schema([Patient.self, Visit.self, QuestionnaireVersion.self, StoredSubmission.self, Consultation.self, DatabasePatient.self, DatabaseConsultationNote.self]) }
     public static func makeContainer(inMemory: Bool = false, url: URL? = nil) throws -> ModelContainer {
         let config = url.map { ModelConfiguration(schema: schema, url: $0, cloudKitDatabase: .none) }
             ?? ModelConfiguration(schema: schema, isStoredInMemoryOnly: inMemory, cloudKitDatabase: .none)
@@ -79,12 +79,24 @@ public enum GPInTheBoxSchema {
         do { try modelContext.save() } catch { modelContext.rollback(); throw error }
         return receipt
     }
+    /// Retrieves only records preceding this visit, keeping today's intake out of history.
+    public func history(patientID: UUID, beforeVisitID: UUID) throws -> PatientSnapshot {
+        var patient = try snapshot(patientID: patientID)
+        guard let current = patient.visits.first(where: { $0.id == beforeVisitID }) else {
+            throw RecordError.missingVisit
+        }
+        patient.visits = patient.visits.filter {
+            $0.id != beforeVisitID && $0.arrivedAt <= current.arrivedAt
+        }
+        return patient
+    }
     public func correctIdentity(patientID: UUID, fullName: String, medicareID: String, dateOfBirth: String) throws {
         try RecordMutations.correctIdentity(context: modelContext, patientID: patientID, fullName: fullName, medicareID: medicareID, dateOfBirth: dateOfBirth)
     }
     public func snapshot(patientID: UUID) throws -> PatientSnapshot {
         guard let p = try modelContext.fetch(FetchDescriptor<Patient>(predicate: #Predicate { $0.id == patientID })).first else { throw RecordError.missingPatient }
-        return p.snapshot()
+        let consultations = try modelContext.fetch(FetchDescriptor<Consultation>(predicate: #Predicate { $0.patientID == patientID }))
+        return p.snapshot(consultations: consultations)
     }
 }
 

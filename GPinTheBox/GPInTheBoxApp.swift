@@ -28,6 +28,8 @@ import UserNotifications
     var serverError: String?
     var availability: ModelAvailability = .available
     var selectedVisitID: UUID?
+    var recordingVisitID: UUID?
+    var microphoneIsRecording = false
     var arrivalRevision = 0
     var embedder: ContextualEmbedder?
     private var started = false
@@ -67,6 +69,7 @@ import UserNotifications
 struct ClinicView: View {
     @Bindable var model: AppModel
     @Environment(\.scenePhase) private var phase
+    @State private var showingPatientDatabase = false
     var body: some View {
         NavigationSplitView {
             VStack(alignment: .leading, spacing: 12) {
@@ -86,7 +89,9 @@ struct ClinicView: View {
                 SelectedPatient(model: model)
             }
         }
+        .sheet(isPresented: $showingPatientDatabase) { PatientDatabaseView(model: model) }
         .toolbar {
+            ToolbarItem { Button("Patient database", systemImage: "person.text.rectangle") { showingPatientDatabase = true } }
             ToolbarItem(placement: .automatic) {
                 if let error = model.serverError { Label(error, systemImage: "wifi.exclamationmark").foregroundStyle(.red) }
                 else if let url = model.serverURL {
@@ -133,17 +138,28 @@ struct SelectedPatient: View {
         }
     }
 }
+private enum VisitSection: String, CaseIterable, Identifiable {
+    case intake = "Intake", recording = "Recording", notes = "GP Notes", history = "History", assistant = "Assistant"
+    var id: String { rawValue }
+}
+
 struct PatientDetailView: View {
     @Bindable var visit: Visit
     @Query(sort: \Visit.arrivedAt) private var allVisits: [Visit]
+    @Query(sort: \Consultation.startedAt) private var allConsultations: [Consultation]
     let model: AppModel
     @Environment(\.modelContext) private var context
     @State private var error: String?
     @State private var correcting = false
+    @State private var section: VisitSection = .intake
+    @State private var recoveredHistory: PatientSnapshot?
+    @State private var historyError: String?
+    @State private var loadingHistory = true
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                if let patient = visit.patient {
+        VStack(alignment: .leading, spacing: 0) {
+            if let patient = visit.patient {
+                VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 6) {
                             Text(patient.fullName).font(.largeTitle.bold())
@@ -151,46 +167,172 @@ struct PatientDetailView: View {
                         }
                         Spacer()
                         Button("Correct identity") { correcting = true }
-                        Button("Finish visit") { visit.finish(); save() }.buttonStyle(.borderedProminent).tint(.teal).disabled(visit.status == .done)
+                        Button("Finish visit") { visit.finish(); save() }
+                            .buttonStyle(.borderedProminent).tint(.teal)
+                            .disabled(visit.status == .done || model.recordingVisitID == visit.id)
+                    }
+                    Text("GP workspace · Patient intake first, consultation tools in their own sections.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    historyLookupStatus
+                    Picker("Visit section", selection: $section) {
+                        ForEach(VisitSection.allCases) { item in Text(item.rawValue).tag(item) }
+                    }.pickerStyle(.segmented)
+                    if model.recordingVisitID == visit.id {
+                        HStack {
+                            Label(model.microphoneIsRecording ? "Recording in progress" : "Preparing microphone…", systemImage: "record.circle.fill")
+                                .foregroundStyle(.red)
+                            Spacer()
+                            Button("Open recording controls") { section = .recording }
+                        }.padding(10).background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
                     }
                     if let error { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red) }
-                    GroupBox {
-                        VStack(alignment: .leading, spacing: 14) { ForEach(visit.answers, id: \.questionID) { answer in
-                            VStack(alignment: .leading, spacing: 4) { Text(answer.prompt).font(.subheadline.weight(.semibold)); Text(answer.value.isEmpty ? "Not provided" : answer.value).foregroundStyle(answer.value.isEmpty ? .secondary : .primary).textSelection(.enabled) }
-                        }}.frame(maxWidth: .infinity, alignment: .leading).padding(10)
-                    } label: { Label("Today’s intake", systemImage: "doc.text") }
-                    GroupBox {
-                        TextEditor(text: Binding(get: { visit.gpNote }, set: { value in
-                            visit.gpNote = value; visit.noteUpdatedAt = .now; patient.revision = UUID(); save()
-                        })).font(.body).frame(minHeight: 130).padding(8)
-                    } label: { Label("GP note", systemImage: "square.and.pencil") }
-                    let past = allVisits.filter { $0.patient?.id == patient.id }.filter { $0.id != visit.id && $0.arrivedAt <= visit.arrivedAt }.sorted { $0.arrivedAt > $1.arrivedAt }
-                    if !past.isEmpty {
-                        GroupBox {
-                            VStack(alignment: .leading, spacing: 12) { ForEach(past) { previous in
-                                DisclosureGroup(previous.arrivedAt.formatted(date: .abbreviated, time: .shortened)) {
-                                    VStack(alignment: .leading, spacing: 10) {
-                                        ForEach(previous.answers, id: \.questionID) { answer in Text("\(answer.prompt)\n\(answer.value.isEmpty ? "Not provided" : answer.value)") }
-                                        Text("GP note: \(previous.gpNote.isEmpty ? "None" : previous.gpNote)").fontWeight(.medium)
-                                    }.textSelection(.enabled).padding()
-                                }
-                            }}.padding(10).frame(maxWidth: .infinity, alignment: .leading)
-                        } label: { Label("Past visits", systemImage: "clock") }
-                    }
-                    AssistantPanel(patient: currentSnapshot(for: patient), visitID: visit.id, model: model)
-                }
-            }.padding(28)
+                }.padding(24)
+                Divider()
+                // Keep each section mounted so notes, drafts and recording survive section
+                // navigation. Removing the entire visit still triggers recording cleanup.
+                ZStack(alignment: .topLeading) {
+                    sectionPane(.intake) { intakeSection }
+                    sectionPane(.recording) { ConsultationPanel(visit: visit, model: model) }
+                    sectionPane(.notes) { notesSection(patient: patient) }
+                    sectionPane(.history) { historySection(patient: patient) }
+                    sectionPane(.assistant) { AssistantPanel(patient: currentSnapshot(for: patient), visitID: visit.id, model: model) }
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }.background(Color(nsColor: .windowBackgroundColor))
         .onAppear { visit.open(); save() }
+        .task(id: visit.patient?.revision) { await recoverHistory() }
         .sheet(isPresented: $correcting) { if let patient = visit.patient { IdentityEditor(patient: patient, model: model) } }
+    }
+
+    private var historyLookupStatus: some View {
+        GroupBox {
+            HStack(spacing: 12) {
+                if loadingHistory {
+                    ProgressView().controlSize(.small)
+                    Text("Searching patient records…")
+                } else if let historyError {
+                    Label(historyError, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                    Spacer()
+                    Button("Retry lookup") { Task { await recoverHistory() } }
+                } else if let recoveredHistory {
+                    let count = recoveredHistory.visits.count
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label(count == 0 ? "No previous history found" : "Patient history recovered",
+                              systemImage: count == 0 ? "person.crop.circle.badge.plus" : "checkmark.circle.fill")
+                            .font(.subheadline.weight(.semibold))
+                        Text(count == 0
+                             ? "The local patient record has no visits before this intake."
+                             : "Matched by Medicare / insurance ID and date of birth · \(count) previous visit\(count == 1 ? "" : "s")")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if count > 0 { Button("Review history") { section = .history } }
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(6)
+        }
+    }
+
+    @MainActor private func recoverHistory() async {
+        loadingHistory = true
+        historyError = nil
+        recoveredHistory = nil
+        defer { loadingHistory = false }
+        guard let patient = visit.patient, let store = model.store else {
+            historyError = "Patient records are unavailable."
+            return
+        }
+        do {
+            recoveredHistory = try await store.history(patientID: patient.id, beforeVisitID: visit.id)
+        } catch {
+            historyError = "History lookup failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func sectionPane<Content: View>(_ value: VisitSection, @ViewBuilder content: () -> Content) -> some View {
+        ScrollView {
+            content().frame(maxWidth: .infinity, alignment: .leading).padding(24)
+        }
+        .opacity(section == value ? 1 : 0)
+        .allowsHitTesting(section == value)
+        .disabled(section != value)
+        .accessibilityHidden(section != value)
+        .zIndex(section == value ? 1 : 0)
+    }
+
+    private var intakeSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Patient intake").font(.title2.bold())
+            Text("Answers submitted by the patient before the consultation. The patient’s browser only has access to the intake form.")
+                .foregroundStyle(.secondary)
+            GroupBox {
+                VStack(alignment: .leading, spacing: 18) {
+                    ForEach(visit.answers, id: \.questionID) { answer in
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(answer.prompt).font(.subheadline.weight(.semibold))
+                            Text(answer.value.isEmpty ? "Not provided" : answer.value)
+                                .foregroundStyle(answer.value.isEmpty ? .secondary : .primary).textSelection(.enabled)
+                        }
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
+            }
+            Button("Continue to recording") { section = .recording }.buttonStyle(.borderedProminent).tint(.teal)
+        }
+    }
+
+    private func notesSection(patient: Patient) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("GP notes").font(.title2.bold())
+            Text("Write clinical notes for this visit. Changes are saved automatically.").foregroundStyle(.secondary)
+            GroupBox {
+                TextEditor(text: Binding(get: { visit.gpNote }, set: { value in
+                    visit.gpNote = value; visit.noteUpdatedAt = .now; patient.revision = UUID(); save()
+                })).font(.body).frame(minHeight: 280).padding(8).accessibilityLabel("GP visit note")
+            }
+        }
+    }
+
+    private func historySection(patient: Patient) -> some View {
+        let past = allVisits.filter { $0.patient?.id == patient.id && $0.id != visit.id && $0.arrivedAt <= visit.arrivedAt }.sorted { $0.arrivedAt > $1.arrivedAt }
+        return VStack(alignment: .leading, spacing: 16) {
+            Text("Patient history").font(.title2.bold())
+            Text("Previous intake, GP notes, transcripts, and approved consultation summaries.").foregroundStyle(.secondary)
+            if past.isEmpty {
+                ContentUnavailableView("No previous visits", systemImage: "clock", description: Text("Completed visit records will be available here at the next consultation."))
+            } else {
+                ForEach(past) { previous in
+                    GroupBox {
+                        DisclosureGroup(previous.arrivedAt.formatted(date: .abbreviated, time: .shortened)) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                ForEach(previous.answers, id: \.questionID) { answer in Text("\(answer.prompt)\n\(answer.value.isEmpty ? "Not provided" : answer.value)") }
+                                Text("GP note: \(previous.gpNote.isEmpty ? "None" : previous.gpNote)").fontWeight(.medium)
+                                ForEach(allConsultations.filter { $0.visitID == previous.id && $0.patientID == patient.id && $0.archivedAt == nil }) { consultation in
+                                    if let approved = consultation.approvedSnapshot() {
+                                        Text("GP-reviewed consultation summary").font(.headline)
+                                        Text(approved.text)
+                                        Text("Approved \(approved.approvedAt.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    if consultation.wasInterrupted { Text("Partial recording: the transcript may not cover the whole consultation.").font(.caption).foregroundStyle(.orange) }
+                                    if !consultation.transcript.isEmpty {
+                                        DisclosureGroup("Consultation transcript · \(consultation.startedAt.formatted(date: .omitted, time: .shortened))") { Text(consultation.conversationText).padding(.top, 6) }
+                                    }
+                                }
+                            }.textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 12)
+                        }.padding(10)
+                    }
+                }
+            }
+        }
     }
     private func currentSnapshot(for patient: Patient) -> PatientSnapshot {
         // A background intake save can refresh Visit queries before SwiftData refreshes
         // an already-loaded inverse relationship. Build history from the live query.
         let history = allVisits.filter { $0.patient?.id == patient.id }.sorted {
             $0.arrivedAt == $1.arrivedAt ? $0.id.uuidString < $1.id.uuidString : $0.arrivedAt < $1.arrivedAt
-        }.map { VisitSnapshot(id: $0.id, arrivedAt: $0.arrivedAt, answers: $0.answers, gpNote: $0.gpNote, noteUpdatedAt: $0.noteUpdatedAt) }
+        }.map { VisitSnapshot(id: $0.id, arrivedAt: $0.arrivedAt, answers: $0.answers, gpNote: $0.gpNote, noteUpdatedAt: $0.noteUpdatedAt, consultationSummaries: consultationSummaries(for: $0.id)) }
         return PatientSnapshot(id: patient.id, fullName: patient.fullName, dateOfBirth: patient.dateOfBirth, revision: patient.revision, visits: history)
+    }
+    private func consultationSummaries(for visitID: UUID) -> [ConsultationSummarySnapshot] {
+        allConsultations.filter { $0.visitID == visitID && $0.patientID == visit.patient?.id }.compactMap { $0.approvedSnapshot() }
     }
     private func save() { do { try context.save(); error = nil } catch { self.error = "Could not save: \(error.localizedDescription)" } }
 }

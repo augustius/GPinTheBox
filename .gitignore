@@ -3,3 +3,6 @@ DerivedData/
 *.xcuserstate
 xcuserdata/
 .DS_Store
+.venv-pyannote/
+models/community-1/
+__pycache__/
