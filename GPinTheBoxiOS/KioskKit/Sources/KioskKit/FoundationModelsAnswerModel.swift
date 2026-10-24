@@ -11,16 +11,18 @@ import FoundationModels
     @Guide(description: "spokenMonth as a number from 1 to 12, or nil if spokenMonth is nil.") var month: Int?
     @Guide(description: "spokenDay as a number from 1 to 31, or nil if spokenDay is nil.") var day: Int?
 }
-@Generable private struct PrefillCandidate {
+@Generable private struct ExtractionCandidate {
     @Guide(description: "The number of the question this answers.") var questionNumber: Int
-    @Guide(description: "The patient's own words answering that question.") var answer: String
+    @Guide(description: "The patient's own words answering that question, with filler words removed.") var answer: String
 }
-@Generable private struct PrefillResult {
-    @Guide(description: "Answers only to questions the transcript explicitly addresses. Empty if none.") var candidates: [PrefillCandidate]
+@Generable private struct ExtractionResult {
+    @Guide(description: "Answers only to questions the reply explicitly addresses. Empty if none.") var candidates: [ExtractionCandidate]
 }
 
 public struct FoundationModelsAnswerModel: AnswerModel {
     static let instructions = "You tidy a patient's spoken answer to one clinic intake question. Remove filler words, false starts and repetitions. Keep the patient's own words. Never add information, never guess, and never give medical advice or a diagnosis. If the answer is unclear, return it unchanged."
+
+    static let extractionInstructions = "You read a patient's reply in a clinic intake chat and pick out which intake questions it answers. The reply may answer several questions at once, so list every question it answers. A name the patient gives answers the full name question. A symptom or complaint the patient mentions also answers the question about the main reason for the visit, and a time they mention answers when it started. Give each answer in the patient's own words with filler words removed. Never add information, never guess, and never give medical advice or a diagnosis. Leave out any question the reply does not clearly answer."
 
     public init() {}
     public var isAvailable: Bool { SystemLanguageModel.default.availability == .available }
@@ -37,19 +39,19 @@ public struct FoundationModelsAnswerModel: AnswerModel {
         }
     }
 
-    public func prefill(transcript: String, remaining: [KioskQuestion]) async throws -> [Int: String] {
-        let questions = remaining.map { "\($0.id + 1). \($0.text)" }.joined(separator: "\n")
-        let prompt = "Questions:\n\(questions)\n\nSpoken answer: \(transcript)\n\nAnswer only the questions above that the spoken answer explicitly addresses, using their question numbers."
-        let ids = Set(remaining.map(\.id))
+    public func extract(reply: String, unanswered: [KioskQuestion]) async throws -> [Int: String] {
+        let questions = unanswered.map { "\($0.id + 1). \($0.text)" }.joined(separator: "\n")
+        let prompt = "Questions:\n\(questions)\n\nThe patient's reply: \(reply)\n\nWhich of these questions does the patient's reply answer? For each, give the answer in the patient's own words with filler words removed, using the question number. Leave out questions the reply does not explicitly answer."
+        let ids = Set(unanswered.map(\.id))
         var result: [Int: String] = [:]
-        for c in try await generate(prompt, PrefillResult.self).candidates where ids.contains(c.questionNumber - 1) {
+        for c in try await generate(prompt, ExtractionResult.self, instructions: Self.extractionInstructions).candidates where ids.contains(c.questionNumber - 1) {
             result[c.questionNumber - 1] = c.answer
         }
         return result
     }
 
-    private func generate<T: Generable>(_ prompt: String, _ type: T.Type) async throws -> T {
-        let session = LanguageModelSession(instructions: Self.instructions)
+    private func generate<T: Generable>(_ prompt: String, _ type: T.Type, instructions: String = Self.instructions) async throws -> T {
+        let session = LanguageModelSession(instructions: instructions)
         return try await session.respond(to: prompt, generating: type, options: GenerationOptions(temperature: 0)).content
     }
 }

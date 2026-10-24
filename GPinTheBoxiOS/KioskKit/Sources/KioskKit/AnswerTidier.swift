@@ -3,25 +3,31 @@ import Foundation
 public protocol AnswerModel: Sendable {
     var isAvailable: Bool { get }
     func tidy(_ transcript: String, for question: KioskQuestion) async throws -> String
-    func prefill(transcript: String, remaining: [KioskQuestion]) async throws -> [Int: String]
+    func extract(reply: String, unanswered: [KioskQuestion]) async throws -> [Int: String]
+}
+
+public struct ReplyDigest: Equatable, Sendable {
+    public var values: [Int: String]
+    public var skippedTarget: Bool
+    public init(values: [Int: String], skippedTarget: Bool) { self.values = values; self.skippedTarget = skippedTarget }
 }
 
 public actor AnswerTidier {
     private let model: any AnswerModel
     private let timeout: Duration
-    public private(set) var prefillEnabled: Bool
+    public private(set) var extractionEnabled: Bool
 
     public init(model: any AnswerModel, timeout: Duration = .seconds(5)) {
-        self.model = model; self.timeout = timeout; prefillEnabled = model.isAvailable
+        self.model = model; self.timeout = timeout; extractionEnabled = model.isAvailable
     }
 
     public func tidy(_ transcript: String, for question: KioskQuestion) async -> String {
         let raw = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard model.isAvailable else { prefillEnabled = false; return raw }
+        guard model.isAvailable else { extractionEnabled = false; return raw }
         let model = model
         let output: String
         do { output = try await withTimeout(timeout) { try await model.tidy(transcript, for: question) } }
-        catch { disablePrefill(unlessCancelled: error); return raw }
+        catch { disableExtraction(unlessCancelled: error); return raw }
         let tidied: String
         switch question.kind {
         case .identifier: tidied = AnswerFormatting.normaliseIdentifier(output)
@@ -31,12 +37,13 @@ public actor AnswerTidier {
         return tidied.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !raw.isEmpty ? raw : tidied
     }
 
-    public func prefill(transcript: String, remaining: [KioskQuestion]) async -> [Int: String] {
-        guard prefillEnabled else { return [:] }
+    public func extract(reply: String, unanswered: [KioskQuestion]) async -> [Int: String] {
+        let remaining = unanswered
+        guard extractionEnabled else { return [:] }
         let model = model
         let raw: [Int: String]
-        do { raw = try await withTimeout(timeout) { try await model.prefill(transcript: transcript, remaining: remaining) } }
-        catch { disablePrefill(unlessCancelled: error); return [:] }
+        do { raw = try await withTimeout(timeout) { try await model.extract(reply: reply, unanswered: remaining) } }
+        catch { disableExtraction(unlessCancelled: error); return [:] }
         let byID = Dictionary(remaining.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let questionTexts = Set((KioskQuestions.all + remaining).map { Self.comparable($0.text) })
         return raw.reduce(into: [:]) { out, entry in
@@ -52,13 +59,38 @@ public actor AnswerTidier {
         }
     }
 
+    private static let skipWords: Set<String> = ["none", "no", "nothing", "nope", "n/a", "skip", "pass", "i'd rather not say", "rather not say", "prefer not to say"]
+
+    public static func isSkip(_ reply: String) -> Bool {
+        let t = reply.replacingOccurrences(of: "\u{2019}", with: "'")
+            .trimmingCharacters(in: CharacterSet(charactersIn: ".!?").union(.whitespacesAndNewlines)).lowercased()
+        return skipWords.contains(t)
+    }
+
+    public func digest(reply: String, target: KioskQuestion, unanswered: [KioskQuestion]) async -> ReplyDigest {
+        let skip = Self.isSkip(reply)
+        if !target.isRequired && skip { return ReplyDigest(values: [:], skippedTarget: true) }
+        let found = await extract(reply: reply, unanswered: unanswered)
+        if !found.isEmpty { return ReplyDigest(values: found, skippedTarget: false) }
+        if skip { return ReplyDigest(values: [:], skippedTarget: false) }
+        let tidied = await tidy(reply, for: target)
+        let value: String?
+        switch target.kind {
+        case .dateOfBirth: value = AnswerFormatting.isoDOB(from: tidied).flatMap { KioskDate.isValidPastDOB($0) ? $0 : nil }
+        case .identifier: value = AnswerFormatting.normaliseIdentifier(tidied)
+        case .fullName, .freeText: value = tidied
+        }
+        guard let value, !value.isEmpty else { return ReplyDigest(values: [:], skippedTarget: false) }
+        return ReplyDigest(values: [target.id: value], skippedTarget: false)
+    }
+
     private static func comparable(_ text: String) -> String {
         text.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".?!").union(.whitespacesAndNewlines))
     }
 
-    public func reset() { prefillEnabled = model.isAvailable }
+    public func reset() { extractionEnabled = model.isAvailable }
 
-    private func disablePrefill(unlessCancelled error: any Error) {
-        if !(error is CancellationError) && !Task.isCancelled { prefillEnabled = false }
+    private func disableExtraction(unlessCancelled error: any Error) {
+        if !(error is CancellationError) && !Task.isCancelled { extractionEnabled = false }
     }
 }
