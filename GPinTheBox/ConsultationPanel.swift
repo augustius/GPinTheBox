@@ -32,7 +32,7 @@ struct ConsultationPanel: View {
         GroupBox {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Record once the patient is seated with the doctor. Transcription and summaries run on this Mac. Audio is deleted after the transcript and requested speaker analysis are saved.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .font(.callout).foregroundStyle(Color.careSecondary)
                 HStack {
                     Picker("Spoken English", selection: $locale) {
                         Text("English (Australia)").tag("en-AU")
@@ -44,21 +44,21 @@ struct ConsultationPanel: View {
                         Button("Stop & transcribe") { stopAndTranscribe() }.buttonStyle(.borderedProminent).tint(.red)
                     } else {
                         Button { startRecording() } label: { Label(consultations.isEmpty ? "Start recording" : "Record again", systemImage: "mic.fill") }
-                            .buttonStyle(.borderedProminent).tint(.teal)
+                            .buttonStyle(.borderedProminent).tint(Color.careAccent)
                             .disabled(!consent || working != nil || model.recordingVisitID != nil || visit.status == .done)
                     }
                 }
                 if !recorder.isRecording {
                     Toggle("The patient has agreed to this consultation being recorded.", isOn: $consent)
                         .disabled(working != nil || visit.status == .done)
-                    if visit.status == .done { Text("This visit is finished. Recording is available during an active consultation.").font(.caption).foregroundStyle(.secondary) }
+                    if visit.status == .done { Text("This visit is finished. Recording is available during an active consultation.").font(.caption).foregroundStyle(Color.careSecondary) }
                 }
                 HStack {
                     Button("Speech glossary & setup…") { showSpeechSettings = true }
                     Toggle("Separate speakers locally (Core ML)", isOn: $separateSpeakers)
                 }.disabled(working != nil || recorder.isRecording)
                 if separateSpeakers {
-                    Text("Download the speaker model once in Speech glossary & setup. Speaker labels are estimates; assign Doctor and Patient after checking the conversation.").font(.caption).foregroundStyle(.secondary)
+                    Text("Download the speaker model once in Speech glossary & setup. Speaker labels are estimates; assign Doctor and Patient after checking the conversation.").font(.caption).foregroundStyle(Color.careSecondary)
                 }
                 if let working {
                     HStack { ProgressView().controlSize(.small); Text(working); Button("Cancel") { cancelOperation() } }
@@ -67,16 +67,16 @@ struct ConsultationPanel: View {
                 if let recordingError = recorder.lastError { Text(recordingError).foregroundStyle(.orange) }
                 if !consultations.isEmpty && !recorder.isRecording {
                     Text("Record again starts a new attempt, even if the previous one was archived. Check patient agreement first. Re-record archives an existing attempt before starting fresh.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.caption).foregroundStyle(Color.careSecondary)
                 }
                 Toggle("Show archived recordings", isOn: $showArchived)
                 ForEach(consultations.filter { showArchived || $0.archivedAt == nil }) { consultation in
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
                             Text(consultation.startedAt.formatted(date: .abbreviated, time: .shortened)).font(.headline)
-                            Text(consultation.localeIdentifier == "en-US" ? "English (US)" : "English (Australia)").font(.caption).foregroundStyle(.secondary)
+                            Text(consultation.localeIdentifier == "en-US" ? "English (US)" : "English (Australia)").font(.caption).foregroundStyle(Color.careSecondary)
                             Spacer()
-                            if consultation.approvedSnapshot() != nil { Label("Approved", systemImage: "checkmark.seal.fill").foregroundStyle(.teal) }
+                            if consultation.approvedSnapshot() != nil { Label("Approved", systemImage: "checkmark.seal.fill").foregroundStyle(Color.careAccent) }
                         }
                         if consultation.archivedAt != nil {
                             Label("Archived — excluded from patient summaries and answers", systemImage: "archivebox")
@@ -93,14 +93,14 @@ struct ConsultationPanel: View {
                             Button("Re-record") { rerecord(consultation) }
                                 .disabled(!consent || model.recordingVisitID != nil || visit.status == .done)
                             Button("Delete (archive)") { setArchived(consultation, archived: true) }
-                            Text("Keeps saved content. You can restore it or start a new recording.").font(.caption).foregroundStyle(.secondary)
+                            Text("Keeps saved content. You can restore it or start a new recording.").font(.caption).foregroundStyle(Color.careSecondary)
                         }.disabled(working != nil || recorder.isRecording)
                         if consultation.wasInterrupted {
                             Text("This recording ended early or was interrupted. Its transcript may cover only part of the consultation.").font(.caption).foregroundStyle(.orange)
                         }
                         if consultation.transcript.isEmpty {
                             if active?.id != consultation.id || !recorder.isRecording {
-                                Text(consultation.endedAt == nil ? "Recording interrupted or not started. Any captured audio is retained for recovery." : "Audio retained until transcription is saved.").foregroundStyle(.secondary)
+                                Text(consultation.endedAt == nil ? "Recording interrupted or not started. Any captured audio is retained for recovery." : "Audio retained until transcription is saved.").foregroundStyle(Color.careSecondary)
                                 HStack {
                                     Button("Transcribe recording") { transcribe(consultation) }.disabled(working != nil || recorder.isRecording)
                                 }
@@ -119,11 +119,11 @@ struct ConsultationPanel: View {
                                     Text("The transcript is saved, but audio cleanup is still pending.").font(.caption).foregroundStyle(.orange)
                                     Button("Delete saved audio") { deleteSavedAudio(consultation) }.disabled(working != nil || recorder.isRecording)
                                 }
-                            } else { Text("Transcript saved · original audio deleted").font(.caption).foregroundStyle(.secondary) }
+                            } else { Text("Transcript saved · original audio deleted").font(.caption).foregroundStyle(Color.careSecondary) }
                         }
                         }
                     }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.teal.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+                        .background(Color.careAccent.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
                 }
             }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
         } label: { Label("Consultation recording", systemImage: "waveform") }
@@ -343,7 +343,7 @@ struct ConsultationReview: View {
             }
             DisclosureGroup("Saved consultation transcript") {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Automated combined transcript. Speaker identities are not inferred. Correct any transcription errors before approving a summary.").font(.caption).foregroundStyle(.secondary)
+                    Text("Automated combined transcript. Speaker identities are not inferred. Correct any transcription errors before approving a summary.").font(.caption).foregroundStyle(Color.careSecondary)
                     TextEditor(text: $transcriptEdit).font(.body).frame(minHeight: 180)
                     Button("Save transcript corrections") { saveTranscript() }
                         .disabled(generating || transcriptEdit == consultation.transcript || transcriptEdit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -361,15 +361,15 @@ struct ConsultationReview: View {
                 .accessibilityLabel("Consultation summary draft")
                 .onChange(of: summaryEdit) { _, _ in reviewed = false }
             if let evidence { DisclosureGroup("Generated evidence — verify against the transcript") { CitedTextView(text: evidence) } }
-            Text("Only the doctor-approved summary is included in future visit summaries and record questions. The full transcript stays in this visit’s history.").font(.caption).foregroundStyle(.secondary)
+            Text("Only the doctor-approved summary is included in future visit summaries and record questions. The full transcript stays in this visit’s history.").font(.caption).foregroundStyle(Color.careSecondary)
             Toggle("I have checked and corrected this summary against the consultation.", isOn: $reviewed)
             HStack {
                 Button("Save draft") { saveDraft() }.disabled(generating || summaryEdit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || transcriptEdit != consultation.transcript)
-                Button("Approve & save to patient record") { approve() }.buttonStyle(.borderedProminent).tint(.teal)
+                Button("Approve & save to patient record") { approve() }.buttonStyle(.borderedProminent).tint(Color.careAccent)
                     .disabled(!reviewed || generating || summaryEdit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || transcriptEdit != consultation.transcript)
             }
             if let approvedAt = consultation.approvedAt, consultation.approvedSnapshot() != nil {
-                Text("Approved \(approvedAt.formatted(date: .abbreviated, time: .shortened)). Available in future visits.").font(.caption).foregroundStyle(.teal)
+                Text("Approved \(approvedAt.formatted(date: .abbreviated, time: .shortened)). Available in future visits.").font(.caption).foregroundStyle(Color.careAccent)
             }
             if let error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
         }

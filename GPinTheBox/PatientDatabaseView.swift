@@ -29,13 +29,13 @@ struct PatientDatabaseView: View {
             HSplitView {
                 VStack(alignment: .leading) {
                     TextField("First name, last name, or Medicare number", text: $query).textFieldStyle(.roundedBorder)
-                    Text("\(patients.count) imported patients").font(.caption).foregroundStyle(.secondary)
+                    Text("\(patients.count) imported patients").font(.caption).foregroundStyle(Color.careSecondary)
                     List(selection: $selectedID) {
                         ForEach(patients.filter { $0.matches(query) }) { patient in
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("\(patient.first_name) \(patient.last_name)").font(.headline)
                                 Text("\(patient.patient_id) · DOB \(patient.date_of_birth)")
-                                Text(patient.medicare_number).foregroundStyle(.secondary)
+                                Text(patient.medicare_number).foregroundStyle(Color.careSecondary)
                             }.tag(patient.patient_id)
                         }
                     }
@@ -83,7 +83,7 @@ private struct DatabasePatientDetail: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text("\(patient.first_name) \(patient.last_name)").font(.largeTitle.bold())
-                Text("\(patient.patient_id) · Born \(patient.date_of_birth) · Medicare \(patient.medicare_number)").foregroundStyle(.secondary)
+                Text("\(patient.patient_id) · Born \(patient.date_of_birth) · Medicare \(patient.medicare_number)").foregroundStyle(Color.careSecondary)
                 Text("\(patient.consultationNotes.count) consultation notes recovered").font(.headline)
                 GroupBox("Patient record") {
                     VStack(alignment: .leading, spacing: 8) {
@@ -102,7 +102,7 @@ private struct DatabasePatientDetail: View {
                         if let error { Text(error).foregroundStyle(.orange) }
                         if !answer.isEmpty {
                             Text(answer).textSelection(.enabled)
-                            Text("AI-generated answer — verify against the source record below.").font(.caption).foregroundStyle(.secondary)
+                            Text("AI-generated answer — verify against the source record below.").font(.caption).foregroundStyle(Color.careSecondary)
                         }
                     }.padding(8)
                 }

@@ -11,7 +11,7 @@ struct ConversationView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Consultation conversation").font(.headline)
-            Text("Speaker labels are estimates. Assign Doctor and Patient only after checking the turns. Unassigned text may include overlapping or uncertain speech. Role or text corrections clear any existing summary approval.").font(.caption).foregroundStyle(.secondary)
+            Text("Speaker labels are estimates. Assign Doctor and Patient only after checking the turns. Unassigned text may include overlapping or uncertain speech. Role or text corrections clear any existing summary approval.").font(.caption).foregroundStyle(Color.careSecondary)
             ForEach(speakers, id: \.self) { speaker in
                 Picker(consultation.speakerLabel(for: speaker), selection: Binding(get: { consultation.speakerRoles[speaker] ?? .unassigned }, set: { role in
                     do {
@@ -51,7 +51,7 @@ private struct ConversationTurnRow: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(consultation.speakerLabel(for: turn.speakerID)).font(.subheadline.bold())
-                    Text(timestamp(turn.startSeconds)).font(.caption).foregroundStyle(.secondary)
+                    Text(timestamp(turn.startSeconds)).font(.caption).foregroundStyle(Color.careSecondary)
                     Spacer()
                     Menu("Assign role") {
                         ForEach(SpeakerRole.allCases, id: \.self) { role in
@@ -90,10 +90,10 @@ private struct ConversationTurnRow: View {
                             } catch { self.error = error.localizedDescription }
                         }.disabled(glossaryTerm.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
-                    if let glossaryMessage { Text(glossaryMessage).font(.caption).foregroundStyle(.secondary) }
+                    if let glossaryMessage { Text(glossaryMessage).font(.caption).foregroundStyle(Color.careSecondary) }
                 } else { Text(turn.text).textSelection(.enabled) }
                 if let error { Text(error).foregroundStyle(.orange) }
-            }.padding(12).background(role == .doctor ? Color.blue.opacity(0.12) : Color.teal.opacity(0.09), in: RoundedRectangle(cornerRadius: 12))
+            }.padding(12).background(role == .doctor ? Color.careSelection : Color.careAccent.opacity(0.09), in: RoundedRectangle(cornerRadius: 12))
             if role != .patient { Spacer(minLength: 35) }
         }
     }

@@ -1,4 +1,6 @@
-# GPInTheBox
+# SteadyCare
+
+Previously GPInTheBox. The app’s display name is SteadyCare; existing project identifiers and local storage locations are retained for compatibility.
 
 A native macOS synthetic-data demo for patient intake over the local network, a GP visit queue, local records, and cited on-device assistance.
 

@@ -16,9 +16,9 @@ struct AssistantPanel: View {
         GroupBox {
             VStack(alignment: .leading, spacing: 18) {
                 Text("Generated on this Mac, only when you ask. Check every claim against its source; matching citations do not prove accuracy.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .font(.callout).foregroundStyle(Color.careSecondary)
                 HStack {
-                    Button { runSummary() } label: { Label("Summarise", systemImage: "sparkles") }.buttonStyle(.borderedProminent).tint(.teal).disabled(busy)
+                    Button { runSummary() } label: { Label("Summarise", systemImage: "sparkles") }.buttonStyle(.bordered).tint(Color.careAccent).disabled(busy)
                     if busy { ProgressView().controlSize(.small); Button("Cancel") { invalidate(clear: false) } }
                 }
                 if let error { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).textSelection(.enabled) }
@@ -31,12 +31,12 @@ struct AssistantPanel: View {
                                 Text(item.item).fontWeight(.medium)
                                 SourceView(chunk: item.noteSource)
                                 switch item.status {
-                                case .notMentioned: Text("Not mentioned").foregroundStyle(.secondary)
+                                case .notMentioned: Text("Not mentioned").foregroundStyle(Color.careSecondary)
                                 case .mentioned(let chunks):
-                                    Text("Mentioned in today’s intake · completion not assessed").foregroundStyle(.teal)
+                                    Text("Mentioned in today’s intake · completion not assessed").foregroundStyle(Color.careAccent)
                                     ForEach(chunks) { SourceView(chunk: $0) }
                                 }
-                            }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(.teal.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                            }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(Color.careAccent.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                         }
                     }
                     Text("Summary").font(.headline)
@@ -48,13 +48,13 @@ struct AssistantPanel: View {
                     TextField("For example: What was reported at the last visit?", text: $question).textFieldStyle(.roundedBorder).onSubmit { if !busy { runQuestion() } }
                     Button("Ask") { runQuestion() }.disabled(busy || question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-                Text("Each question searches the record independently. Chat is cleared when you change patients or edit the record.").font(.caption).foregroundStyle(.secondary)
+                Text("Each question searches the record independently. Chat is cleared when you change patients or edit the record.").font(.caption).foregroundStyle(Color.careSecondary)
                 ForEach(history) { entry in
                     Text(entry.question).fontWeight(.semibold)
                     CitedTextView(text: entry.answer)
                 }
             }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
-        } label: { Label("On-device assistant", systemImage: "sparkles") }
+        } label: { Label("Summary and record questions", systemImage: "sparkles") }
         .onChange(of: patient) { _, _ in invalidate(clear: true) }
         .onDisappear { invalidate(clear: true) }
     }
@@ -98,12 +98,12 @@ struct AssistantPanel: View {
 struct CitedTextView: View {
     let text: CitedText
     var body: some View {
-        if text.isNotFound { Text("Not found in the supplied record excerpts.").foregroundStyle(.secondary) }
+        if text.isNotFound { Text("Not found in the supplied record excerpts.").foregroundStyle(Color.careSecondary) }
         ForEach(text.claims) { claim in
             VStack(alignment: .leading, spacing: 8) {
                 Text(claim.text).textSelection(.enabled)
                 ForEach(Array(claim.sources.enumerated()), id: \.offset) { _, chunk in SourceView(chunk: chunk) }
-            }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+            }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(Color.careSurface, in: RoundedRectangle(cornerRadius: 10))
         }
     }
 }
@@ -112,9 +112,9 @@ struct SourceView: View {
     @State private var showing = false
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Button { showing.toggle() } label: { Text("[\(chunk.id)] \(chunk.source.label) · \(chunk.date.formatted(date: .abbreviated, time: .omitted))").font(.caption.weight(.medium)) }.buttonStyle(.link)
+            Button { showing.toggle() } label: { Text("[\(chunk.id)] \(chunk.source.label) · \(chunk.date.formatted(date: .abbreviated, time: .omitted))").font(.caption.weight(.medium)) }.buttonStyle(.bordered)
                 .popover(isPresented: $showing) { VStack(alignment: .leading, spacing: 8) { Text(chunk.source.label).font(.headline); Text(chunk.date, style: .date); Text(chunk.text).textSelection(.enabled) }.padding().frame(width: 360) }
-            Text(chunk.text).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            Text(chunk.text).font(.caption).foregroundStyle(Color.careSecondary).textSelection(.enabled)
         }
     }
 }

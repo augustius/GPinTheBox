@@ -12,13 +12,22 @@ public enum IntakeForm {
     public static func page(title: String, body: String) -> String {
         """
         <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>\(HTML.escape(title))</title><style>
-        body{font:17px -apple-system,system-ui;margin:0;background:#f1f5f4;color:#163b37}main{max-width:620px;margin:30px auto;padding:28px;background:white;border-radius:20px}label{display:block;margin:22px 0 8px;font-weight:600}input,textarea,button{font:inherit;box-sizing:border-box;width:100%;padding:12px;border:1px solid #9aadaa;border-radius:8px}textarea{min-height:110px}button{background:#17685c;color:white;margin-top:26px;cursor:pointer}.error{color:#a12828}small{color:#526b66}h1{font-size:30px}a{color:#17685c}.brand{font-size:14px;letter-spacing:.1em;font-weight:700}.path{border:1px solid #ccdeda;border-radius:16px;padding:22px;margin:20px 0}.path h2{margin-top:0}.action{display:inline-block;background:#17685c;color:white;padding:14px 20px;border-radius:9px;text-decoration:none;font-weight:600}.secondary{background:#e7f0ed;color:#163b37}nav{margin-bottom:24px}@media(max-width:680px){main{margin:12px;padding:22px}}
+        :root{color-scheme:light;--bg:#F6F2EA;--surface:#FFFCF6;--text:#1F1D1A;--secondary:#66605A;--accent:#2E6A4A;--line:#E2DACB}
+        *{box-sizing:border-box}body{font:17px/1.5 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;margin:0;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased}
+        main{max-width:640px;margin:48px auto;padding:0 24px 48px}h1{font-size:34px;line-height:1.15;letter-spacing:-.02em;margin:16px 0}h2{font-size:22px;line-height:1.3}p{color:var(--secondary)}
+        label{display:block;margin:0 0 6px;font-size:13px;font-weight:600;color:var(--secondary)}
+        input,textarea,button{font:inherit;width:100%;color:var(--text)}input,textarea{border:1px solid var(--line);border-radius:8px;padding:12px;background:var(--surface);min-width:0}input{min-height:48px;font-variant-numeric:tabular-nums}textarea{min-height:112px;resize:vertical}
+        button,.action{border:0;border-radius:14px;background:var(--accent);color:white;padding:14px 20px;min-height:52px;font-weight:600;cursor:pointer;text-align:center}
+        button{margin-top:24px}button:hover,.action:hover{background:#24543B;color:white}a{color:var(--accent);text-underline-offset:3px}a:focus-visible,input:focus-visible,textarea:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+        fieldset{border:0;margin:28px 0 0;padding:0;min-width:0}legend{font-size:13px;font-weight:600;color:var(--secondary);padding:0 0 10px}.field{padding:16px;background:var(--surface);border-bottom:1px solid #ECE5D8}.field:first-of-type{border-radius:12px 12px 0 0}.field:last-child{border-radius:0 0 12px 12px;border-bottom:0}
+        .error{color:#9F2219;font-size:15px}.error:empty{display:none}.error:not(:empty){margin-top:8px}small{color:var(--secondary)}.brand{font-size:13px;letter-spacing:.08em;font-weight:600}.path{border-top:1px solid var(--line);padding:24px 0;margin:24px 0}.path h2{margin-top:0}.action{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}.secondary{background:#E4DCCC;color:var(--text)}nav{margin-bottom:32px;font-size:15px}.confirmation{padding:28px;background:var(--surface);border:1px solid var(--line);border-radius:12px}.check{color:var(--accent);font-size:36px}@media(max-width:680px){main{margin:28px auto;padding:0 20px 32px}.action{width:100%}}
+
         </style></head><body><main>\(body)</main></body></html>
         """
     }
     public static func landingPage() -> String {
-        page(title: "Welcome to GPInTheBox", body: """
-        <p class="brand">GPINTHEBOX</p><h1>Welcome to your visit</h1>
+        page(title: "Welcome to SteadyCare", body: """
+        <p class="brand">STEADYCARE</p><h1>Welcome to your visit</h1>
         <p>Choose the pathway that fits you.</p>
         <section class="path"><h2>I’m a patient</h2><p>Complete your details and intake questions before seeing the doctor. Your answers will be sent to the clinic queue.</p><a class="action" href="/intake">Start patient intake</a></section>
         <section class="path"><h2>I’m a GP</h2><p>Manage the visit queue, search patient records, and open consultation tools on the clinic Mac.</p><a class="action secondary" href="/gp">Go to GP workspace</a></section>
@@ -27,8 +36,8 @@ public enum IntakeForm {
     }
     public static func gpPage() -> String {
         page(title: "GP workspace", body: """
-        <nav><a href="/">Back to pathways</a></nav><p class="brand">GPINTHEBOX · GP</p><h1>Your clinic workspace</h1>
-        <p>The queue and patient database are available in the GPInTheBox app on the clinic Mac.</p>
+        <nav><a href="/">Back to pathways</a></nav><p class="brand">STEADYCARE · GP</p><h1>Your clinic workspace</h1>
+        <p>The queue and patient database are available in the SteadyCare app on the clinic Mac.</p>
         <section class="path"><h2>Queue and records</h2><p>Open today’s visits, search the patient database, review history, and record a consultation.</p><a class="action" href="gpinthebox://workspace">Open GP workspace on this Mac</a></section>
         <p>Using a phone? Continue on the clinic Mac. Patient records are not served through this intake website.</p>
         """)
@@ -38,22 +47,22 @@ public enum IntakeForm {
             let value = HTML.escape(values[name] ?? ""), safe = HTML.escape(name)
             let attributes = "id=\"\(safe)\" name=\"\(safe)\" maxlength=\"12000\" \(required ? "required" : "")"
             let control = multiline ? "<textarea \(attributes)>\(value)</textarea>" : "<input \(attributes) type=\"\(type)\" value=\"\(value)\">"
-            return "<label for=\"\(safe)\">\(HTML.escape(label))\(required ? " *" : "")</label>\(control)<div class=\"error\">\(HTML.escape(errors[name] ?? ""))</div>"
+            return "<div class=\"field\"><label for=\"\(safe)\">\(HTML.escape(label))\(required ? " *" : "")</label>\(control)<div class=\"error\">\(HTML.escape(errors[name] ?? ""))</div></div>"
         }
         let body = """
-        <nav><a href="/">Back to pathways</a></nav><p class="brand">GPINTHEBOX · PATIENT</p><h1>Patient intake</h1><p>Synthetic-data demo. Please do not enter real patient information.</p><small>Required fields are marked *.</small>
+        <nav><a href="/">Back to pathways</a></nav><p class="brand">STEADYCARE · PATIENT</p><h1>Check in</h1><p>Your answers go only to your doctor’s computer in this clinic.</p><p>Synthetic-data demo. Please do not enter real patient information.</p><small>Required fields are marked *.</small>
         <p class="error" role="alert">\(HTML.escape(errors["form"] ?? ""))</p>
         <form action="/submit" method="post" accept-charset="utf-8">
         <input type="hidden" name="submissionID" value="\(submissionID)"><input type="hidden" name="questionnaireID" value="\(questionnaire.id)">
-        \(field("fullName", "Full name", required: true))
+        <fieldset><legend>About you</legend>\(field("fullName", "Full name", required: true))
         \(field("medicareID", "Medicare or insurance ID", required: true))
         \(field("dateOfBirth", "Date of birth", type: "date", required: true))
-        \(questionnaire.questions.map { field(fieldName(for: $0.id), $0.prompt, multiline: $0.kind == .longText, required: $0.isRequired) }.joined())
-        <button type="submit">Send to doctor</button></form>
+        </fieldset><fieldset><legend>Today’s visit</legend>\(questionnaire.questions.map { field(fieldName(for: $0.id), $0.prompt, multiline: $0.kind == .longText, required: $0.isRequired) }.joined())
+        </fieldset><button type="submit">Send to doctor</button></form>
         """
         return page(title: "Patient intake", body: body)
     }
-    public static func thanksPage() -> String { page(title: "Thank you", body: "<h1>Thank you</h1><p>Your answers have been sent to the doctor. Please take a seat.</p><a href=\"/\">Return to welcome page</a>") }
+    public static func thanksPage() -> String { page(title: "Thank you", body: "<div class=\"confirmation\"><span class=\"check\" aria-hidden=\"true\">✓</span><h1>You’re checked in</h1><p>Your answers have been sent to the doctor. Please take a seat.</p><p>You’re in the clinic queue. Your doctor will call you when it’s your turn.</p></div><a href=\"/\">Return to welcome page</a>") }
     public static func parse(fields: [String: String], questionnaire: QuestionnaireSnapshot, now: Date = .now) -> Result<IntakeSubmission, IntakeValidationErrors> {
         let fields = fields.mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         var errors: [String: String] = [:]

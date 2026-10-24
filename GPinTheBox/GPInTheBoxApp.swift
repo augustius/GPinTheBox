@@ -5,18 +5,49 @@ import Intake
 import Assistant
 import UserNotifications
 
+
+// Steady Care tokens shared by the native workspace and its sheets.
+extension Color {
+    static let careBackground = Color(red: 246/255, green: 242/255, blue: 234/255)
+    static let careSidebar = Color(red: 237/255, green: 231/255, blue: 219/255)
+    static let careSelection = Color(red: 228/255, green: 220/255, blue: 204/255)
+    static let careSurface = Color(red: 255/255, green: 252/255, blue: 246/255)
+    static let careLine = Color(red: 226/255, green: 218/255, blue: 203/255)
+    static let careText = Color(red: 31/255, green: 29/255, blue: 26/255)
+    static let careSecondary = Color(red: 102/255, green: 96/255, blue: 90/255)
+    static let careAccent = Color(red: 46/255, green: 106/255, blue: 74/255)
+}
+struct CareGroupBoxStyle: GroupBoxStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            configuration.label.font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.careSecondary)
+            configuration.content
+        }
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.careSurface, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.careLine))
+    }
+}
+extension View {
+    func careTheme() -> some View {
+        self.font(.system(size: 15)).foregroundStyle(Color.careText)
+            .tint(Color.careAccent).groupBoxStyle(CareGroupBoxStyle())
+            .background(Color.careBackground).preferredColorScheme(.light)
+    }
+}
+
 @main struct GPInTheBoxApp: App {
     @State private var model = AppModel()
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("SteadyCare") {
             if let container = model.container {
-                AppEntryView(model: model).modelContainer(container).frame(minWidth: 1000, minHeight: 700).task { await model.start() }
+                AppEntryView(model: model).careTheme().modelContainer(container).frame(minWidth: 1000, minHeight: 700).task { await model.start() }
             } else {
                 ContentUnavailableView("Records could not open", systemImage: "externaldrive.badge.exclamationmark", description: Text(model.startupError ?? "Unknown storage error"))
             }
         }.defaultSize(width: 1200, height: 820)
         Settings {
-            if model.container != nil { QuestionnaireEditor(model: model).frame(width: 700, height: 600) }
+            if model.container != nil { QuestionnaireEditor(model: model).careTheme().frame(width: 700, height: 600) }
         }
     }
 }
@@ -79,9 +110,9 @@ struct AppEntryView: View {
                 })
             } else {
                 VStack(alignment: .leading, spacing: 28) {
-                    Label("GPInTheBox", systemImage: "cross.case.fill").font(.largeTitle.bold()).foregroundStyle(.teal)
+                    Label("SteadyCare", systemImage: "cross.case.fill").font(.largeTitle.bold()).foregroundStyle(Color.careAccent)
                     Text("Welcome. Choose your pathway.").font(.title2)
-                    Text("Patients complete their intake. GPs manage visits and access patient records.").foregroundStyle(.secondary)
+                    Text("Patients complete their intake. GPs manage visits and access patient records.").foregroundStyle(Color.careSecondary)
                     HStack(alignment: .top, spacing: 24) {
                         pathway(title: "Patient", icon: "person.crop.rectangle", detail: "Tell your GP why you are visiting. Complete your details and intake questions, then submit your answers to the clinic queue.", button: "Open patient form") {
                             openURL(URL(string: "http://127.0.0.1:8080/intake")!)
@@ -95,9 +126,9 @@ struct AppEntryView: View {
                     } else if let url = model.serverURL {
                         Text("Patient phone access: \(url)").font(.callout.monospaced()).textSelection(.enabled)
                     }
-                    Text("Synthetic-data demo · Records and consultation tools stay on this Mac.").font(.caption).foregroundStyle(.secondary)
+                    Text("Synthetic-data demo · Records and consultation tools stay on this Mac.").font(.caption).foregroundStyle(Color.careSecondary)
                 }.padding(48).frame(maxWidth: 1050).frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.teal.opacity(0.04))
+                    .background(Color.careBackground)
             }
         }
         .onOpenURL { url in
@@ -106,14 +137,14 @@ struct AppEntryView: View {
     }
     private func pathway(title: String, icon: String, detail: String, button: String, action: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: 20) {
-            Image(systemName: icon).font(.system(size: 36)).foregroundStyle(.teal)
+            Image(systemName: icon).font(.system(size: 36)).foregroundStyle(Color.careAccent)
             Text(title).font(.title.bold())
-            Text(detail).foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 80, alignment: .topLeading)
-            Button(button, action: action).buttonStyle(.borderedProminent).controlSize(.large).tint(.teal)
+            Text(detail).foregroundStyle(Color.careSecondary).frame(maxWidth: .infinity, minHeight: 80, alignment: .topLeading)
+            Button(button, action: action).buttonStyle(.borderedProminent).controlSize(.large).tint(Color.careAccent)
                 .disabled(title == "Patient" && (model.serverURL == nil || model.serverError != nil))
         }.padding(28).frame(maxWidth: .infinity, minHeight: 300, alignment: .topLeading)
-            .background(.background, in: RoundedRectangle(cornerRadius: 20))
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.teal.opacity(0.2)))
+            .background(Color.careSurface, in: RoundedRectangle(cornerRadius: 20))
+            .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.careLine))
     }
 }
 struct ClinicView: View {
@@ -124,14 +155,14 @@ struct ClinicView: View {
     var body: some View {
         NavigationSplitView {
             VStack(alignment: .leading, spacing: 12) {
-                Label("GPInTheBox", systemImage: "cross.case.fill").font(.title2.bold()).foregroundStyle(.teal).padding(.horizontal)
-                Text("TODAY’S CLINIC").font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.horizontal)
+                Label("SteadyCare", systemImage: "cross.case.fill").font(.title2.bold()).foregroundStyle(Color.careAccent).padding(.horizontal)
+                Text("Today’s patients").font(.caption.weight(.semibold)).foregroundStyle(Color.careSecondary).padding(.horizontal)
                 TimelineView(.periodic(from: .now, by: 60)) { context in
                     QueueSidebar(model: model, date: context.date)
                         .id(Calendar.current.startOfDay(for: context.date))
                 }
-                Text("Synthetic-data demo · Local only").font(.caption).foregroundStyle(.secondary).padding()
-            }.padding(.top, 20).navigationSplitViewColumnWidth(min: 240, ideal: 270)
+                Text("Synthetic demo · Saved on this Mac").font(.caption).foregroundStyle(Color.careSecondary).padding()
+            }.padding(.top, 20).background(Color.careSidebar).navigationSplitViewColumnWidth(min: 240, ideal: 270)
         } detail: {
             VStack(spacing: 0) {
                 if case .unavailable(let reason) = model.availability {
@@ -140,7 +171,7 @@ struct ClinicView: View {
                 SelectedPatient(model: model)
             }
         }
-        .sheet(isPresented: $showingPatientDatabase) { PatientDatabaseView(model: model) }
+        .sheet(isPresented: $showingPatientDatabase) { PatientDatabaseView(model: model).careTheme() }
         .toolbar {
             ToolbarItem { Button("Home", systemImage: "house", action: goHome).disabled(model.recordingVisitID != nil).help("Return to pathway selection; stop recording first") }
             ToolbarItem { Button("Patient database", systemImage: "person.text.rectangle") { showingPatientDatabase = true } }
@@ -148,7 +179,7 @@ struct ClinicView: View {
                 if let error = model.serverError { Label(error, systemImage: "wifi.exclamationmark").foregroundStyle(.red) }
                 else if let url = model.serverURL {
                     HStack { Text("Clinic landing: \(url)").font(.callout.monospaced()); Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(url, forType: .string) } label: { Image(systemName: "doc.on.doc") }.help("Copy clinic landing URL") }
-                } else { Text("Waiting for a LAN address").foregroundStyle(.secondary) }
+                } else { Text("Waiting for a LAN address").foregroundStyle(Color.careSecondary) }
             }
             ToolbarItem { SettingsLink { Image(systemName: "slider.horizontal.3") }.help("Edit questionnaire") }
         }
@@ -168,15 +199,17 @@ struct QueueSidebar: View {
                 VStack(alignment: .leading, spacing: 7) {
                     Text(visit.patient?.fullName ?? "Patient").font(.headline)
                     HStack {
-                        Text(visit.arrivedAt, style: .time).foregroundStyle(.secondary)
+                        Text(visit.arrivedAt, style: .time).monospacedDigit().foregroundStyle(Color.careSecondary)
                         Spacer()
-                        Text(visit.status == .waiting ? "Waiting" : visit.status == .inConsult ? "In consult" : "Done")
+                        Label(visit.status == .waiting ? "Waiting" : visit.status == .inConsult ? "In consult" : "Done", systemImage: visit.status == .waiting ? "circle" : visit.status == .inConsult ? "circle.fill" : "checkmark")
+                            .foregroundStyle(visit.status == .inConsult ? Color.careAccent : Color.careSecondary)
                             .font(.caption.weight(.medium)).padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(visit.status == .done ? Color.gray.opacity(0.15) : Color.teal.opacity(0.14), in: Capsule())
+                            .background(visit.status == .done ? Color.gray.opacity(0.15) : Color.careAccent.opacity(0.14), in: Capsule())
                     }
-                }.padding(.vertical, 7).tag(visit.id)
+                }.padding(.vertical, 8).tag(visit.id)
+                    .listRowBackground(model.selectedVisitID == visit.id ? Color.careSelection : Color.clear)
             }
-        }.overlay { if visits.isEmpty { ContentUnavailableView("No arrivals yet", systemImage: "person.crop.rectangle.stack", description: Text("Submit a synthetic intake form to get started.")) } }
+        }.listStyle(.sidebar).scrollContentBackground(.hidden).background(Color.careSidebar).overlay { if visits.isEmpty { ContentUnavailableView("No arrivals yet", systemImage: "person.crop.rectangle.stack", description: Text("Submit a synthetic intake form to get started.")) } }
     }
 }
 struct SelectedPatient: View {
@@ -191,7 +224,7 @@ struct SelectedPatient: View {
     }
 }
 private enum VisitSection: String, CaseIterable, Identifiable {
-    case intake = "Intake", recording = "Recording", notes = "GP Notes", history = "History", assistant = "Assistant"
+    case intake = "Patient brief", recording = "Recording", notes = "GP notes", history = "History", assistant = "Ask the record"
     var id: String { rawValue }
 }
 
@@ -214,17 +247,17 @@ struct PatientDetailView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(patient.fullName).font(.largeTitle.bold())
-                            Text("Born \(patient.dateOfBirth) · \(visit.arrivedAt.formatted(date: .abbreviated, time: .shortened))").foregroundStyle(.secondary)
+                            Text(patient.fullName).font(.system(size: 34, weight: .bold))
+                            Text("Born \(patient.dateOfBirth) · \(visit.arrivedAt.formatted(date: .abbreviated, time: .shortened))").foregroundStyle(Color.careSecondary)
                         }
                         Spacer()
                         Button("Correct identity") { correcting = true }
                         Button("Finish visit") { visit.finish(); save() }
-                            .buttonStyle(.borderedProminent).tint(.teal)
+                            .buttonStyle(.borderedProminent).tint(Color.careAccent)
                             .disabled(visit.status == .done || model.recordingVisitID == visit.id)
                     }
-                    Text("GP workspace · Patient intake first, consultation tools in their own sections.")
-                        .font(.caption).foregroundStyle(.secondary)
+                    Text("Saved on this Mac · Patient-reported intake and GP consultation")
+                        .font(.caption).foregroundStyle(Color.careSecondary)
                     historyLookupStatus
                     Picker("Visit section", selection: $section) {
                         ForEach(VisitSection.allCases) { item in Text(item.rawValue).tag(item) }
@@ -250,10 +283,10 @@ struct PatientDetailView: View {
                     sectionPane(.assistant) { AssistantPanel(patient: currentSnapshot(for: patient), visitID: visit.id, model: model) }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-        }.background(Color(nsColor: .windowBackgroundColor))
+        }.background(Color.careBackground)
         .onAppear { visit.open(); save() }
         .task(id: visit.patient?.revision) { await recoverHistory() }
-        .sheet(isPresented: $correcting) { if let patient = visit.patient { IdentityEditor(patient: patient, model: model) } }
+        .sheet(isPresented: $correcting) { if let patient = visit.patient { IdentityEditor(patient: patient, model: model).careTheme() } }
     }
 
     private var historyLookupStatus: some View {
@@ -274,8 +307,8 @@ struct PatientDetailView: View {
                             .font(.subheadline.weight(.semibold))
                         Text(count == 0
                              ? "The local patient record has no visits before this intake."
-                             : "Matched by Medicare / insurance ID and date of birth · \(count) previous visit\(count == 1 ? "" : "s")")
-                            .font(.caption).foregroundStyle(.secondary)
+                             : "\(count) previous visit\(count == 1 ? "" : "s")")
+                            .font(.caption).foregroundStyle(Color.careSecondary)
                     }
                     Spacer()
                     if count > 0 { Button("Review history") { section = .history } }
@@ -313,32 +346,32 @@ struct PatientDetailView: View {
 
     private var intakeSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Patient intake").font(.title2.bold())
-            Text("Answers submitted by the patient before the consultation. The patient’s browser only has access to the intake form.")
-                .foregroundStyle(.secondary)
+            Text("Today’s check-in").font(.title2.bold())
+            Text("Patient-reported · Read their answers before starting the consultation.")
+                .foregroundStyle(Color.careSecondary)
             GroupBox {
                 VStack(alignment: .leading, spacing: 18) {
                     ForEach(visit.answers, id: \.questionID) { answer in
                         VStack(alignment: .leading, spacing: 5) {
-                            Text(answer.prompt).font(.subheadline.weight(.semibold))
+                            Text(answer.prompt).font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.careSecondary)
                             Text(answer.value.isEmpty ? "Not provided" : answer.value)
-                                .foregroundStyle(answer.value.isEmpty ? .secondary : .primary).textSelection(.enabled)
+                                .foregroundStyle(answer.value.isEmpty ? Color.careSecondary : Color.careText).textSelection(.enabled)
                         }
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
             }
-            Button("Continue to recording") { section = .recording }.buttonStyle(.borderedProminent).tint(.teal)
+            Button("Continue to recording") { section = .recording }.buttonStyle(.bordered).tint(Color.careAccent)
         }
     }
 
     private func notesSection(patient: Patient) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("GP notes").font(.title2.bold())
-            Text("Write clinical notes for this visit. Changes are saved automatically.").foregroundStyle(.secondary)
+            Text("Write clinical notes for this visit. Changes are saved automatically.").foregroundStyle(Color.careSecondary)
             GroupBox {
                 TextEditor(text: Binding(get: { visit.gpNote }, set: { value in
                     visit.gpNote = value; visit.noteUpdatedAt = .now; patient.revision = UUID(); save()
-                })).font(.body).frame(minHeight: 280).padding(8).accessibilityLabel("GP visit note")
+                })).scrollContentBackground(.hidden).background(Color.careSurface).font(.body).frame(minHeight: 280).padding(8).accessibilityLabel("GP visit note")
             }
         }
     }
@@ -347,7 +380,7 @@ struct PatientDetailView: View {
         let past = allVisits.filter { $0.patient?.id == patient.id && $0.id != visit.id && $0.arrivedAt <= visit.arrivedAt }.sorted { $0.arrivedAt > $1.arrivedAt }
         return VStack(alignment: .leading, spacing: 16) {
             Text("Patient history").font(.title2.bold())
-            Text("Previous intake, GP notes, transcripts, and approved consultation summaries.").foregroundStyle(.secondary)
+            Text("Previous intake, GP notes, transcripts, and approved consultation summaries.").foregroundStyle(Color.careSecondary)
             if past.isEmpty {
                 ContentUnavailableView("No previous visits", systemImage: "clock", description: Text("Completed visit records will be available here at the next consultation."))
             } else {
@@ -361,7 +394,7 @@ struct PatientDetailView: View {
                                     if let approved = consultation.approvedSnapshot() {
                                         Text("GP-reviewed consultation summary").font(.headline)
                                         Text(approved.text)
-                                        Text("Approved \(approved.approvedAt.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary)
+                                        Text("Approved \(approved.approvedAt.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(Color.careSecondary)
                                     }
                                     if consultation.wasInterrupted { Text("Partial recording: the transcript may not cover the whole consultation.").font(.caption).foregroundStyle(.orange) }
                                     if !consultation.transcript.isEmpty {
@@ -396,7 +429,7 @@ struct IdentityEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Correct patient identity").font(.title2.bold())
-            Text("Corrections apply to this patient’s existing visits. Records are never merged automatically.").foregroundStyle(.secondary)
+            Text("Corrections apply to this patient’s existing visits. Records are never merged automatically.").foregroundStyle(Color.careSecondary)
             TextField("Full name", text: $name); TextField("Medicare / insurance ID", text: $medicare); TextField("Date of birth (yyyy-MM-dd)", text: $dob)
             if let error { Text(error).foregroundStyle(.red) }
             HStack { Button("Cancel") { dismiss() }; Spacer(); Button("Save correction") {

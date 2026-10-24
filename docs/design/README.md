@@ -1,6 +1,6 @@
-# Steady Care — cream design direction
+# SteadyCare — cream design direction
 
-Design target for the GPInTheBox Mac app and the patient check-in form. Static mockups, not implemented yet.
+Design target for the SteadyCare Mac app and the patient check-in form. Reference mockups. The cream palette, typography, queue treatment, shared surfaces, source buttons, and grouped phone check-in styling are now applied in the app. The existing section navigation is retained; the inspector layout remains a reference.
 
 Principle: **patient first, one job per screen.** Each screen has at most one prominent button. Clinical content beats software labels.
 
@@ -61,3 +61,5 @@ Spacing: 8-pt rhythm. Corner radius 8 (buttons), 10–12 (rows, fields, banners)
 Paul Smith (P10004) and his history, allergy, medicine and LDL results come from the synthetic demo data (patients CSV and consultation notes). Today's check-in text, arrival times, the GP note text and the LAN address are illustrative placeholders.
 
 Not yet checked: contrast measured in the built app, Dynamic Type / large text, dark mode, long medicine and allergy lists.
+
+Implementation note: this theme deliberately uses a light appearance so cream surfaces and field text remain consistent with the reference. Dark-mode variants and a full accessibility audit remain future work.

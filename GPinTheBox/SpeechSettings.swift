@@ -18,7 +18,7 @@ struct SpeechSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Speech glossary & speaker setup").font(.title2.bold())
-            Text("Glossary: one short term per line, up to 100 unique terms. Used as hints by Apple’s on-device dictation engine; recognition is not guaranteed.").foregroundStyle(.secondary)
+            Text("Glossary: one short term per line, up to 100 unique terms. Used as hints by Apple’s on-device dictation engine; recognition is not guaranteed.").foregroundStyle(Color.careSecondary)
             TextEditor(text: $terms).font(.body).frame(minHeight: 160).accessibilityLabel("Speech glossary terms")
             Text("Add terms that were repeatedly misheard, then compare fresh synthetic recordings. Changes apply to the next transcription, not saved records.").font(.caption)
             Divider()
@@ -36,8 +36,8 @@ struct SpeechSettingsView: View {
                         .buttonStyle(.borderedProminent)
                 }
             }
-            if preparing { Text(installed ? "Verifying the installed model on this Mac…" : "Downloading and preparing the model. The first load may take a few minutes.").font(.caption).foregroundStyle(.secondary) }
-            Text("After recording, assign the detected voices to Doctor and Patient. Speaker labels may be wrong around overlapping speech; check the conversation before approving its summary.").font(.caption).foregroundStyle(.secondary)
+            if preparing { Text(installed ? "Verifying the installed model on this Mac…" : "Downloading and preparing the model. The first load may take a few minutes.").font(.caption).foregroundStyle(Color.careSecondary) }
+            Text("After recording, assign the detected voices to Doctor and Patient. Speaker labels may be wrong around overlapping speech; check the conversation before approving its summary.").font(.caption).foregroundStyle(Color.careSecondary)
             if let error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
             HStack {
                 Button("Close") { dismiss() }

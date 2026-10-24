@@ -8,7 +8,7 @@ struct QuestionnaireEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Intake questionnaire").font(.title2.bold())
-            Text("Publishing creates a new version. Forms already open keep their original questions.").foregroundStyle(.secondary)
+            Text("Publishing creates a new version. Forms already open keep their original questions.").foregroundStyle(Color.careSecondary)
             List {
                 ForEach($questions) { $question in
                     VStack(alignment: .leading, spacing: 8) {
