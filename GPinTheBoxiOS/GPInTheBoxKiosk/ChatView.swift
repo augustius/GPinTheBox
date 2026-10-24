@@ -37,7 +37,7 @@ struct ChatView: View {
         .onChange(of: controller.inputMode) { fieldFocused = quiet }
         .onChange(of: typed) {
             controller.noteActivity()
-            if typed.isEmpty { controller.endTyping() } else { controller.beginTyping() }
+            if hasText { controller.beginTyping() } else { controller.endTyping() }
         }
         .onChange(of: controller.dictated) {
             let heard = controller.dictated
@@ -53,15 +53,19 @@ struct ChatView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(m.text).font(.title3).foregroundStyle(.white).frame(maxWidth: .infinity, alignment: .leading)
             if m.id == controller.latestKioskMessageID {
-                HStack(spacing: 18) {
-                    Button { controller.speakAgain() } label: { Image(systemName: "speaker.wave.2") }
+                HStack(spacing: 4) {
+                    Button { controller.speakAgain() } label: { tapTarget("speaker.wave.2") }
                         .accessibilityLabel("Read aloud").disabled(controller.isDigesting)
-                    Button { controller.rephrase() } label: { Image(systemName: "arrow.clockwise") }
+                    Button { controller.rephrase() } label: { tapTarget("arrow.clockwise") }
                         .accessibilityLabel("Ask another way").disabled(!controller.canRephrase)
                 }
-                .font(.body).foregroundStyle(Theme.secondary).buttonStyle(.plain)
+                .padding(.leading, -12).font(.body).foregroundStyle(Theme.secondary).buttonStyle(.plain)
             }
         }
+    }
+
+    private func tapTarget(_ symbol: String) -> some View {
+        Image(systemName: symbol).frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
     }
 
     private func patientMessage(_ m: ChatMessage) -> some View {
@@ -81,7 +85,7 @@ struct ChatView: View {
         let q = controller.flow.questions[index]
         return Button { editing = EditTarget(id: index) } label: {
             HStack(spacing: 4) {
-                Text("\(ChipLabel.text(for: q)): \(Theme.display(value, for: q))")
+                Text("\(ChipLabel.text(for: q)): \(Theme.display(value, for: q))").lineLimit(2)
                 Image(systemName: "pencil").imageScale(.small)
             }
             .font(.subheadline).foregroundStyle(Theme.chipText)
@@ -134,7 +138,7 @@ struct ChatView: View {
                 .accessibilityLabel("Dictate").disabled(controller.isDigesting)
             }
             if hasText {
-                circle("arrow.up", label: "Send", action: submit)
+                circle("arrow.up", label: "Send", action: submit).disabled(controller.isDigesting)
             } else if controller.speechAvailable {
                 circle(quiet ? "waveform.slash" : "waveform", label: quiet ? "Voice off" : "Voice on") {
                     controller.inputMode = quiet ? .voice : .typing
@@ -155,7 +159,7 @@ struct ChatView: View {
     }
 
     private func submit() {
-        guard hasText else { return }
+        guard hasText, !controller.isDigesting else { fieldFocused = true; return }
         let text = typed
         controller.submitTyped(text)
         typed = ""
@@ -196,7 +200,7 @@ private struct TrailingFlow: Layout {
         for row in rows(subviews, width: bounds.width) {
             var x = bounds.maxX - row.width
             for i in row.indices {
-                let size = subviews[i].sizeThatFits(.unspecified)
+                let size = Self.size(of: subviews[i], width: bounds.width)
                 subviews[i].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
                 x += size.width + spacing
             }
@@ -207,7 +211,7 @@ private struct TrailingFlow: Layout {
     private func rows(_ subviews: Subviews, width: CGFloat) -> [(indices: [Int], width: CGFloat, height: CGFloat)] {
         var rows: [(indices: [Int], width: CGFloat, height: CGFloat)] = []
         for (i, view) in subviews.enumerated() {
-            let size = view.sizeThatFits(.unspecified)
+            let size = Self.size(of: view, width: width)
             if let last = rows.last, last.width + spacing + size.width <= width {
                 rows[rows.count - 1] = (last.indices + [i], last.width + spacing + size.width, max(last.height, size.height))
             } else {
@@ -215,5 +219,11 @@ private struct TrailingFlow: Layout {
             }
         }
         return rows
+    }
+
+    /// The subview's ideal size, or wrapped to `width` when it's wider than the row.
+    private static func size(of view: LayoutSubview, width: CGFloat) -> CGSize {
+        let ideal = view.sizeThatFits(.unspecified)
+        return ideal.width <= width ? ideal : view.sizeThatFits(ProposedViewSize(width: width, height: nil))
     }
 }
