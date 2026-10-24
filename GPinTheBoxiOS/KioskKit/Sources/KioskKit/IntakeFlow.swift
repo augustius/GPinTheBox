@@ -21,6 +21,8 @@ public struct IntakeFlow: Equatable, Sendable {
     public func isAnsweredEmpty(_ i: Int) -> Bool { answeredEmpty.contains(i) }
     public var answeredCount: Int { questions.indices.count(where: isAnswered) }
     public var unanswered: [KioskQuestion] { questions.filter { !isAnswered($0.id) } }
+    /// The non-empty answers given so far, by question index.
+    public var recordedAnswers: [Int: String] { Dictionary(uniqueKeysWithValues: questions.indices.filter { !answers[$0].isEmpty }.map { ($0, answers[$0]) }) }
 
     public mutating func start() { if phase == .welcome { advance() } }
 

@@ -296,7 +296,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     }
 
     private func digest(_ reply: String, id: Int, target t: Int, gen: Int) async {
-        let d = await tidier.digest(reply: reply, target: flow.questions[t], unanswered: flow.unanswered)
+        let d = await tidier.digest(reply: reply, target: flow.questions[t], unanswered: flow.unanswered, answers: flow.recordedAnswers)
         guard isLive(gen) else { return }
         isDigesting = false
         var applied = flow.record(d.values)

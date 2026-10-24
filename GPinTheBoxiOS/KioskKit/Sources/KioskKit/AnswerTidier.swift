@@ -3,7 +3,7 @@ import Foundation
 public protocol AnswerModel: Sendable {
     var isAvailable: Bool { get }
     func tidy(_ transcript: String, for question: KioskQuestion) async throws -> String
-    func extract(reply: String, unanswered: [KioskQuestion]) async throws -> [Int: String]
+    func extract(reply: String, target: KioskQuestion, unanswered: [KioskQuestion]) async throws -> [Int: String]
 }
 
 public struct ReplyDigest: Equatable, Sendable {
@@ -37,27 +37,56 @@ public actor AnswerTidier {
         return tidied.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !raw.isEmpty ? raw : tidied
     }
 
-    public func extract(reply: String, unanswered: [KioskQuestion]) async -> [Int: String] {
+    public func extract(reply: String, target: KioskQuestion, unanswered: [KioskQuestion], answers: [Int: String] = [:]) async -> [Int: String] {
+        await candidates(reply: reply, target: target, unanswered: unanswered, answers: answers).values
+    }
+
+    /// The model's answers that pass validation; `addressed` is also true when it only repeated answers already recorded.
+    private func candidates(reply: String, target: KioskQuestion, unanswered: [KioskQuestion], answers: [Int: String]) async -> (values: [Int: String], addressed: Bool) {
         let remaining = unanswered
-        guard extractionEnabled else { return [:] }
+        guard extractionEnabled else { return ([:], false) }
         let model = model
         let raw: [Int: String]
-        do { raw = try await withTimeout(timeout) { try await model.extract(reply: reply, unanswered: remaining) } }
-        catch { disableExtraction(unlessCancelled: error); return [:] }
+        do { raw = try await withTimeout(timeout) { try await model.extract(reply: reply, target: target, unanswered: remaining) } }
+        catch { disableExtraction(unlessCancelled: error); return ([:], false) }
         let byID = Dictionary(remaining.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let questionTexts = Set((KioskQuestions.all + remaining).map { Self.comparable($0.text) })
-        return raw.reduce(into: [:]) { out, entry in
-            let text = entry.value.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let q = byID[entry.key], !text.hasSuffix("?"), !questionTexts.contains(Self.comparable(text)) else { return }
-            let value: String?
-            switch q.kind {
-            case .identifier: value = AnswerFormatting.normaliseIdentifier(text)
-            case .dateOfBirth: value = AnswerFormatting.isoDOB(from: text).flatMap { KioskDate.isValidPastDOB($0) ? $0 : nil }
-            case .fullName, .freeText: value = text
-            }
-            if let value, !value.isEmpty { out[q.id] = value }
+        let recorded = Set(answers.values.map(Self.dedupeKey))
+        var values: [Int: String] = [:], seen: Set<String> = [], addressed = false
+        for (id, value) in raw.sorted(by: { ($0.key == target.id ? -1 : $0.key) < ($1.key == target.id ? -1 : $1.key) }) {
+            let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty, !text.hasSuffix("?"), !questionTexts.contains(Self.comparable(text)) else { continue }
+            guard let q = byID[id] else { continue }
+            guard let value = Self.validated(text, for: q, isTarget: q.id == target.id) else { continue }
+            let key = Self.dedupeKey(value)
+            if recorded.contains(key) { addressed = true; continue }
+            if seen.insert(key).inserted { values[q.id] = value }
         }
+        return (values, addressed || !values.isEmpty)
     }
+
+    private static let timeWords: Set<String> = ["today", "yesterday", "since", "ago", "week", "weeks", "month", "months", "year", "years",
+        "morning", "mornings", "night", "nights", "tonight", "day", "days", "hour", "hours", "monday", "tuesday", "wednesday", "thursday",
+        "friday", "saturday", "sunday", "last", "couple", "few"]
+
+    /// A value in the form its question stores, or nil when it can't be that answer. Values for other questions must also look plausible.
+    private static func validated(_ text: String, for q: KioskQuestion, isTarget: Bool) -> String? {
+        let hasDigit = text.contains(where: \.isNumber)
+        let value: String?
+        switch q.kind {
+        case .identifier:
+            let id = AnswerFormatting.normaliseIdentifier(text)
+            value = id.contains(where: \.isNumber) ? id : nil
+        case .dateOfBirth: value = AnswerFormatting.isoDOB(from: text).flatMap { KioskDate.isValidPastDOB($0) ? $0 : nil }
+        case .fullName: value = isTarget || (!hasDigit && text.split(whereSeparator: \.isWhitespace).count <= 5) ? text : nil
+        case .freeText:
+            let words = text.lowercased().split(whereSeparator: { !$0.isLetter }).map(String.init)
+            value = isTarget || q.id != 4 || hasDigit || words.contains(where: timeWords.contains) ? text : nil
+        }
+        return value.flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    private static func dedupeKey(_ text: String) -> String { text.lowercased().filter { $0.isLetter || $0.isNumber } }
 
     private static let skipWords: Set<String> = ["none", "no", "nothing", "nope", "n/a", "skip", "pass", "i'd rather not say", "rather not say", "prefer not to say"]
 
@@ -67,10 +96,10 @@ public actor AnswerTidier {
         return skipWords.contains(t)
     }
 
-    public func digest(reply: String, target: KioskQuestion, unanswered: [KioskQuestion]) async -> ReplyDigest {
+    public func digest(reply: String, target: KioskQuestion, unanswered: [KioskQuestion], answers: [Int: String] = [:]) async -> ReplyDigest {
         if Self.isSkip(reply) { return ReplyDigest(values: [:], skippedTarget: !target.isRequired) }
-        let found = await extract(reply: reply, unanswered: unanswered)
-        if !found.isEmpty { return ReplyDigest(values: found, skippedTarget: false) }
+        let found = await candidates(reply: reply, target: target, unanswered: unanswered, answers: answers)
+        if found.addressed { return ReplyDigest(values: found.values, skippedTarget: false) }
         let tidied = await tidy(reply, for: target)
         let value: String?
         switch target.kind {

@@ -22,7 +22,7 @@ import FoundationModels
 public struct FoundationModelsAnswerModel: AnswerModel {
     static let instructions = "You tidy a patient's spoken answer to one clinic intake question. Remove filler words, false starts and repetitions. Keep the patient's own words. Never add information, never guess, and never give medical advice or a diagnosis. If the answer is unclear, return it unchanged."
 
-    static let extractionInstructions = "You read a patient's reply in a clinic intake chat and pick out which intake questions it answers. The reply may answer several questions at once, so list every question it answers. A name the patient gives answers the full name question. A symptom or complaint the patient mentions also answers the question about the main reason for the visit, and a time they mention answers when it started. Give each answer in the patient's own words with filler words removed. Never add information, never guess, and never give medical advice or a diagnosis. Leave out any question the reply does not clearly answer."
+    static let extractionInstructions = "You read a patient's reply in a clinic intake chat and pick out which intake questions it answers. The reply may answer several questions at once, so list every question it answers. A name the patient gives answers the full name question. A short reply, such as just a name, an ID or a date, answers only the question the kiosk just asked. Put each piece of the reply under one question only. Give each answer in the patient's own words with filler words removed. Never add information, never guess, and never give medical advice or a diagnosis. Leave out any question the reply does not clearly answer."
 
     public init() {}
     public var isAvailable: Bool { SystemLanguageModel.default.availability == .available }
@@ -39,9 +39,9 @@ public struct FoundationModelsAnswerModel: AnswerModel {
         }
     }
 
-    public func extract(reply: String, unanswered: [KioskQuestion]) async throws -> [Int: String] {
+    public func extract(reply: String, target: KioskQuestion, unanswered: [KioskQuestion]) async throws -> [Int: String] {
         let questions = unanswered.map { "\($0.id + 1). \($0.text)" }.joined(separator: "\n")
-        let prompt = "Questions:\n\(questions)\n\nThe patient's reply: \(reply)\n\nWhich of these questions does the patient's reply answer? For each, give the answer in the patient's own words with filler words removed, using the question number. Leave out questions the reply does not explicitly answer."
+        let prompt = "Questions:\n\(questions)\n\nThe kiosk just asked question \(target.id + 1): \(target.text)\nThe patient's reply: \(reply)\n\nWhich of these questions does the patient's reply answer? For each, give the answer in the patient's own words with filler words removed, using the question number. Leave out questions the reply does not explicitly answer."
         let ids = Set(unanswered.map(\.id))
         var result: [Int: String] = [:]
         for c in try await generate(prompt, ExtractionResult.self, instructions: Self.extractionInstructions).candidates where ids.contains(c.questionNumber - 1) {

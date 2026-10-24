@@ -16,7 +16,7 @@ struct FakeAnswerModel: AnswerModel {
     func tidy(_ transcript: String, for question: KioskQuestion) async throws -> String {
         try await perform { tidied[transcript] ?? transcript }
     }
-    func extract(reply: String, unanswered: [KioskQuestion]) async throws -> [Int: String] {
+    func extract(reply: String, target: KioskQuestion, unanswered: [KioskQuestion]) async throws -> [Int: String] {
         let ids = Set(unanswered.map(\.id))
         return try await perform { (byReply[reply] ?? extracted).filter { ids.contains($0.key) } }
     }

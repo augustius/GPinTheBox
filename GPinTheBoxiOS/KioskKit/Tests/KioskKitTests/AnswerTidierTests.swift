@@ -14,18 +14,19 @@ func fallbackUsesRawTranscriptAndDisablesExtraction(model: FakeAnswerModel) asyn
     let t = AnswerTidier(model: model, timeout: .milliseconds(50))
     #expect(await t.tidy(" um a cough ", for: KioskQuestions.all[3]) == "um a cough")
     #expect(await t.extractionEnabled == false)
-    #expect(await t.extract(reply: "x", unanswered: Array(KioskQuestions.all.dropFirst(4))) == [:])
+    #expect(await t.extract(reply: "x", target: KioskQuestions.all[4], unanswered: Array(KioskQuestions.all.dropFirst(4))) == [:])
 }
 @Test func extractPassesThroughAndResetReenables() async {
     let t = AnswerTidier(model: FakeAnswerModel(extracted: [5: "Cough"]))
-    #expect(await t.extract(reply: "I've had a cough", unanswered: Array(KioskQuestions.all.dropFirst(4))) == [5: "Cough"])
+    #expect(await t.extract(reply: "I've had a cough", target: KioskQuestions.all[4], unanswered: Array(KioskQuestions.all.dropFirst(4))) == [5: "Cough"])
     await t.reset(); #expect(await t.extractionEnabled)
 }
 @Test(.enabled(if: FoundationModelsAnswerModel().isAvailable))
 func realModelTidiesSyntheticJane() async throws {
     let m = FoundationModelsAnswerModel()
-    let found = try await m.extract(reply: "I'm Jane Demo, I've had a cough since Monday", unanswered: KioskQuestions.all)
-    #expect(found.keys.contains(0) && found.keys.contains(3), "got \(found)")
+    let found = try await m.extract(reply: "I'm Jane Demo, I've had a cough since Monday", target: KioskQuestions.fullName, unanswered: KioskQuestions.all)
+    #expect(found[0]?.contains("Jane Demo") == true && Set(found.keys).isSubset(of: [0, 3, 4, 5]), "got \(found)")
+    #expect(found.filter { $0.key != 0 }.values.allSatisfy { !$0.contains("Jane") }, "got \(found)")
     #expect(try await m.tidy("um my name is Jane Demo", for: KioskQuestions.fullName).contains("Jane Demo"))
     #expect(try await m.tidy("the first of May nineteen eighty", for: KioskQuestions.dateOfBirth) == "1980-05-01")
 }
@@ -45,17 +46,17 @@ func realModelDoesNotInventMissingDay() async throws {
 }
 @Test func extractValidatesCandidatesByKind() async {
     let t = AnswerTidier(model: FakeAnswerModel(extracted: [2: "Jane Demo", 1: "demo 001", 5: "  ", 9: "Cough"]))
-    #expect(await t.extract(reply: "x", unanswered: Array(KioskQuestions.all.dropFirst())) == [1: "DEMO001", 9: "Cough"])
+    #expect(await t.extract(reply: "x", target: KioskQuestions.identifier, unanswered: Array(KioskQuestions.all.dropFirst())) == [1: "DEMO001", 9: "Cough"])
 }
 @Test func extractNormalisesDOBAndDropsInvalidOrUnaskedKeys() async {
     let remaining = Array(KioskQuestions.all.dropFirst())
-    #expect(await AnswerTidier(model: FakeAnswerModel(extracted: [2: "1/5/1980"])).extract(reply: "x", unanswered: remaining) == [2: "1980-05-01"])
+    #expect(await AnswerTidier(model: FakeAnswerModel(extracted: [2: "1/5/1980"])).extract(reply: "x", target: KioskQuestions.identifier, unanswered: remaining) == [2: "1980-05-01"])
     let t = AnswerTidier(model: FakeAnswerModel(extracted: [0: "Jane Demo", 1: " - ", 2: "2999-01-01", 7: " Penicillin ", 12: "x"]))
-    #expect(await t.extract(reply: "x", unanswered: remaining) == [7: "Penicillin"])
+    #expect(await t.extract(reply: "x", target: KioskQuestions.identifier, unanswered: remaining) == [7: "Penicillin"])
 }
 @Test func extractDropsQuestionTextAndQuestions() async {
     let t = AnswerTidier(model: FakeAnswerModel(extracted: [4: "When did it start?", 5: "describe your symptoms", 9: "Cough?", 8: " Full name. "]))
-    #expect(await t.extract(reply: "x", unanswered: Array(KioskQuestions.all.dropFirst(4))) == [:])
+    #expect(await t.extract(reply: "x", target: KioskQuestions.all[4], unanswered: Array(KioskQuestions.all.dropFirst(4))) == [:])
 }
 
 let q = KioskQuestions.all
@@ -87,4 +88,45 @@ let q = KioskQuestions.all
     let t = AnswerTidier(model: FakeAnswerModel(extracted: [1: "PASS", 5: "Pass"]))
     #expect(await t.digest(reply: "Pass", target: q[1], unanswered: q) == ReplyDigest(values: [:], skippedTarget: false))
     #expect(AnswerTidier.isSkip("No\u{2026}") && AnswerTidier.isSkip("nope..."))
+}
+@Test func extractDedupesWithinReplyKeepingTargetOrLowest() async {
+    let jane = AnswerTidier(model: FakeAnswerModel(extracted: [0: "Jane Demo", 3: "Jane Demo", 9: " jane demo. "]))
+    #expect(await jane.extract(reply: "Jane Demo", target: q[0], unanswered: q) == [0: "Jane Demo"])
+    #expect(await jane.extract(reply: "Jane Demo", target: q[9], unanswered: q) == [9: "jane demo."])
+    let cough = AnswerTidier(model: FakeAnswerModel(extracted: [5: "cough", 3: "Cough"]))
+    #expect(await cough.extract(reply: "cough", target: q[1], unanswered: q) == [3: "Cough"])
+}
+@Test func extractDropsValuesAlreadyRecorded() async {
+    let t = AnswerTidier(model: FakeAnswerModel(extracted: [9: "Jane Demo", 7: "Penicillin"]))
+    let rest = Array(q.dropFirst())
+    #expect(await t.extract(reply: "x", target: q[9], unanswered: rest, answers: [0: "Jane Demo"]) == [7: "Penicillin"])
+    let other = AnswerTidier(model: FakeAnswerModel(extracted: [9: "Jane Demo"]))
+    #expect(await other.digest(reply: "Jane Demo", target: q[9], unanswered: rest, answers: [0: "Jane Demo"]).values == [:])
+}
+@Test func extractGatesImplausibleValuesForOtherQuestions() async {
+    let bad = AnswerTidier(model: FakeAnswerModel(extracted: [0: "Agent 47", 1: "ABC", 4: "a bad cough"]))
+    #expect(await bad.extract(reply: "x", target: q[3], unanswered: q) == [:])
+    let long = AnswerTidier(model: FakeAnswerModel(extracted: [0: "I have had a really bad cough"]))
+    #expect(await long.extract(reply: "x", target: q[3], unanswered: q) == [:])
+    let good = AnswerTidier(model: FakeAnswerModel(extracted: [0: "Jane Demo", 1: "demo 001", 4: "since Monday", 9: "x"]))
+    #expect(await good.extract(reply: "x", target: q[3], unanswered: q) == [0: "Jane Demo", 1: "DEMO001", 4: "since Monday", 9: "x"])
+    #expect(await AnswerTidier(model: FakeAnswerModel(extracted: [4: "3 days"])).extract(reply: "x", target: q[3], unanswered: q) == [4: "3 days"])
+    #expect(await AnswerTidier(model: FakeAnswerModel(extracted: [4: "a while back"])).extract(reply: "x", target: q[4], unanswered: q) == [4: "a while back"])
+}
+struct ShortReply: Sendable, CustomTestStringConvertible {
+    let reply: String, target: Int, allowed: Set<Int>, exact: Bool
+    var testDescription: String { "\(reply) → q\(target)" }
+}
+@Test(.enabled(if: FoundationModelsAnswerModel().isAvailable), arguments: [
+    ShortReply(reply: "Jane Demo", target: 0, allowed: [0], exact: true), ShortReply(reply: "DEMO001", target: 1, allowed: [1], exact: false),
+    ShortReply(reply: "1 May 1980", target: 2, allowed: [2], exact: false),
+    ShortReply(reply: "I've had a cough since Monday", target: 0, allowed: [3, 4, 5], exact: false),
+])
+func realModelMapsShortRepliesToTheQuestionAsked(_ c: ShortReply) async throws {
+    let answers = Dictionary(uniqueKeysWithValues: [(0, "Jane Demo"), (1, "DEMO001")].filter { $0.0 < c.target })
+    let unanswered = q.filter { answers[$0.id] == nil }
+    let raw = try await FoundationModelsAnswerModel().extract(reply: c.reply, target: q[c.target], unanswered: unanswered)
+    let d = await AnswerTidier(model: FoundationModelsAnswerModel()).digest(reply: c.reply, target: q[c.target], unanswered: unanswered, answers: answers)
+    let keys = Set(d.values.keys)
+    #expect(c.exact ? keys == c.allowed : keys.isSubset(of: c.allowed) && !keys.isEmpty, "digest \(d.values), model \(raw)")
 }
