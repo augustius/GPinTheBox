@@ -160,6 +160,13 @@ func realModelCorrectionFillsNothing() async {
     let d = await AnswerTidier(model: FoundationModelsAnswerModel()).digest(reply: "Actually it's spelt Jon", target: q[3], unanswered: Array(q.dropFirst(3)), answers: answers)
     #expect(d.values.isEmpty, "\(d.values)")
 }
+@Test func extractionTimeoutFallsBackWithoutASecondWait() async {
+    let t = AnswerTidier(model: FakeAnswerModel(delay: .seconds(2)), timeout: .milliseconds(200))
+    let start = ContinuousClock.now
+    let d = await t.digest(reply: " a dry cough ", target: q[3], unanswered: q)
+    #expect(d.values == [3: "a dry cough"])
+    #expect(ContinuousClock.now - start < .milliseconds(350), "took \(ContinuousClock.now - start)")
+}
 struct ShortReply: Sendable, CustomTestStringConvertible {
     let reply: String, target: Int, allowed: Set<Int>, exact: Bool
     var testDescription: String { "\(reply) → q\(target)" }

@@ -114,7 +114,8 @@ public actor AnswerTidier {
         let found = await candidates(reply: reply, target: target, unanswered: unanswered, answers: answers)
         if found.addressed { return ReplyDigest(values: found.values, skippedTarget: false) }
         guard !reply.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("?") else { return ReplyDigest(values: [:], skippedTarget: false) }
-        let tidied = await tidy(reply, for: target)
+        // With extraction off (or just timed out), the raw reply is used: no second model wait.
+        let tidied = extractionEnabled ? await tidy(reply, for: target) : reply.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let value = Self.validated(tidied, for: target, isTarget: true),
               !answers.values.map(Self.dedupeKey).contains(Self.dedupeKey(value)) else { return ReplyDigest(values: [:], skippedTarget: false) }
         return ReplyDigest(values: [target.id: value], skippedTarget: false)
