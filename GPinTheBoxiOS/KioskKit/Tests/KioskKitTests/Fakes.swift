@@ -1,4 +1,5 @@
 import Synchronization
+import Testing
 import KioskProtocol
 @testable import KioskKit
 
@@ -60,5 +61,29 @@ final class FakeListener: AnswerListener {
 
     func stop() async {
         state.withLock { s in defer { s.waiting = [] }; return s.waiting }.forEach { $0.finish() }
+    }
+}
+
+extension KioskTimings {
+    static let test = KioskTimings(silence: .milliseconds(30), idle: .seconds(60), idleGrace: .seconds(60), doneReset: .seconds(60))
+    func with(idle: Duration? = nil, idleGrace: Duration? = nil, doneReset: Duration? = nil) -> KioskTimings {
+        KioskTimings(silence: silence, idle: idle ?? self.idle, idleGrace: idleGrace ?? self.idleGrace, doneReset: doneReset ?? self.doneReset)
+    }
+}
+
+@MainActor func makeController(_ script: [[ListenEvent]], model: FakeAnswerModel = FakeAnswerModel(),
+                               transport: FakeTransport = FakeTransport(results: [.success(.ok)])) -> (KioskController, FakeSpeaker) {
+    let speaker = FakeSpeaker()
+    let c = KioskController(speaker: speaker, listener: FakeListener(script: script),
+                            tidier: AnswerTidier(model: model, timeout: .milliseconds(100)), timings: .test)
+    c.submitter = Submitter(transport: transport)
+    return (c, speaker)
+}
+
+@MainActor func eventually(_ condition: @MainActor () -> Bool, sourceLocation: SourceLocation = #_sourceLocation) async {
+    let clock = ContinuousClock(), end = clock.now.advanced(by: .seconds(2))
+    while !condition() {
+        guard clock.now < end else { Issue.record("Condition not met within 2 s", sourceLocation: sourceLocation); return }
+        try? await Task.sleep(for: .milliseconds(10))
     }
 }
