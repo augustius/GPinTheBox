@@ -10,7 +10,7 @@ import UserNotifications
     var body: some Scene {
         WindowGroup {
             if let container = model.container {
-                ClinicView(model: model).modelContainer(container).frame(minWidth: 1000, minHeight: 700).task { await model.start() }
+                AppEntryView(model: model).modelContainer(container).frame(minWidth: 1000, minHeight: 700).task { await model.start() }
             } else {
                 ContentUnavailableView("Records could not open", systemImage: "externaldrive.badge.exclamationmark", description: Text(model.startupError ?? "Unknown storage error"))
             }
@@ -66,8 +66,59 @@ import UserNotifications
         try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: receipt.visitID.uuidString, content: content, trigger: nil))
     }
 }
+struct AppEntryView: View {
+    let model: AppModel
+    @Environment(\.openURL) private var openURL
+    @State private var showingGP = false
+    var body: some View {
+        Group {
+            if showingGP {
+                ClinicView(model: model, goHome: {
+                    model.selectedVisitID = nil
+                    showingGP = false
+                })
+            } else {
+                VStack(alignment: .leading, spacing: 28) {
+                    Label("GPInTheBox", systemImage: "cross.case.fill").font(.largeTitle.bold()).foregroundStyle(.teal)
+                    Text("Welcome. Choose your pathway.").font(.title2)
+                    Text("Patients complete their intake. GPs manage visits and access patient records.").foregroundStyle(.secondary)
+                    HStack(alignment: .top, spacing: 24) {
+                        pathway(title: "Patient", icon: "person.crop.rectangle", detail: "Tell your GP why you are visiting. Complete your details and intake questions, then submit your answers to the clinic queue.", button: "Open patient form") {
+                            openURL(URL(string: "http://127.0.0.1:8080/intake")!)
+                        }
+                        pathway(title: "GP workspace", icon: "stethoscope", detail: "View the visit queue, open the patient database, review history, and record the consultation.", button: "Open GP workspace") {
+                            showingGP = true
+                        }
+                    }
+                    if let error = model.serverError {
+                        Label(error, systemImage: "wifi.exclamationmark").foregroundStyle(.orange)
+                    } else if let url = model.serverURL {
+                        Text("Patient phone access: \(url)").font(.callout.monospaced()).textSelection(.enabled)
+                    }
+                    Text("Synthetic-data demo · Records and consultation tools stay on this Mac.").font(.caption).foregroundStyle(.secondary)
+                }.padding(48).frame(maxWidth: 1050).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.teal.opacity(0.04))
+            }
+        }
+        .onOpenURL { url in
+            if url.scheme == "gpinthebox", url.host == "workspace" { showingGP = true }
+        }
+    }
+    private func pathway(title: String, icon: String, detail: String, button: String, action: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Image(systemName: icon).font(.system(size: 36)).foregroundStyle(.teal)
+            Text(title).font(.title.bold())
+            Text(detail).foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 80, alignment: .topLeading)
+            Button(button, action: action).buttonStyle(.borderedProminent).controlSize(.large).tint(.teal)
+                .disabled(title == "Patient" && (model.serverURL == nil || model.serverError != nil))
+        }.padding(28).frame(maxWidth: .infinity, minHeight: 300, alignment: .topLeading)
+            .background(.background, in: RoundedRectangle(cornerRadius: 20))
+            .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.teal.opacity(0.2)))
+    }
+}
 struct ClinicView: View {
     @Bindable var model: AppModel
+    var goHome: () -> Void = {}
     @Environment(\.scenePhase) private var phase
     @State private var showingPatientDatabase = false
     var body: some View {
@@ -91,11 +142,12 @@ struct ClinicView: View {
         }
         .sheet(isPresented: $showingPatientDatabase) { PatientDatabaseView(model: model) }
         .toolbar {
+            ToolbarItem { Button("Home", systemImage: "house", action: goHome).disabled(model.recordingVisitID != nil).help("Return to pathway selection; stop recording first") }
             ToolbarItem { Button("Patient database", systemImage: "person.text.rectangle") { showingPatientDatabase = true } }
             ToolbarItem(placement: .automatic) {
                 if let error = model.serverError { Label(error, systemImage: "wifi.exclamationmark").foregroundStyle(.red) }
                 else if let url = model.serverURL {
-                    HStack { Text("Intake form: \(url)").font(.callout.monospaced()); Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(url, forType: .string) } label: { Image(systemName: "doc.on.doc") }.help("Copy intake URL") }
+                    HStack { Text("Clinic landing: \(url)").font(.callout.monospaced()); Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(url, forType: .string) } label: { Image(systemName: "doc.on.doc") }.help("Copy clinic landing URL") }
                 } else { Text("Waiting for a LAN address").foregroundStyle(.secondary) }
             }
             ToolbarItem { SettingsLink { Image(systemName: "slider.horizontal.3") }.help("Edit questionnaire") }

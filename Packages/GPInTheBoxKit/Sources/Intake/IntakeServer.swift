@@ -13,7 +13,9 @@ public struct IntakeServer: Sendable {
     }
     public func buildRouter() -> Router<BasicRequestContext> {
         let router = Router()
-        router.get("/") { _, _ -> Response in
+        router.get("/") { _, _ -> Response in Self.html(IntakeForm.landingPage()) }
+        router.get("/gp") { _, _ -> Response in Self.html(IntakeForm.gpPage()) }
+        router.get("/intake") { _, _ -> Response in
             let q = try await store.questionnaire()
             return Self.html(IntakeForm.render(questionnaire: q))
         }
@@ -23,7 +25,7 @@ public struct IntakeServer: Sendable {
             let fields: [String: String]
             do { fields = try IntakeForm.decode(String(buffer: buffer)) }
             catch {
-                return Self.html(IntakeForm.page(title: "Invalid form", body: "<p>The form could not be decoded. Please <a href=\"/\">open a new form</a>.</p>"), status: .badRequest)
+                return Self.html(IntakeForm.page(title: "Invalid form", body: "<p>The form could not be decoded. Please <a href=\"/intake\">open a new form</a>.</p>"), status: .badRequest)
             }
             guard let qid = fields["questionnaireID"].flatMap(UUID.init(uuidString:)), let sid = fields["submissionID"].flatMap(UUID.init(uuidString:)) else {
                 let questionnaire = try await store.questionnaire()
@@ -45,7 +47,7 @@ public struct IntakeServer: Sendable {
                 }
             } catch let error as RecordError {
                 let status: HTTPResponse.Status = if case .submissionConflict = error { .conflict } else { .badRequest }
-                return Self.html(IntakeForm.page(title: "Unable to submit", body: "<p>\(HTML.escape(error.localizedDescription))</p><a href=\"/\">Open a new form</a>"), status: status)
+                return Self.html(IntakeForm.page(title: "Unable to submit", body: "<p>\(HTML.escape(error.localizedDescription))</p><a href=\"/intake\">Open a new form</a>"), status: status)
             }
         }
         return router

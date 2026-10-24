@@ -98,3 +98,17 @@ GP_DEMO_CSV_DIRECTORY=/path/to/csv-folder swift test --package-path Packages/GPI
 ```
 
 The native speaker adapter is pinned to FluidAudio 0.17.7 and the balanced v2.1 Core ML model. First setup validates the downloaded model with Core ML before marking it ready. It accepts local recordings up to 30 minutes / 512 MB, checks cancellation between inference chunks, and preserves audio if inference fails. See [speaker model attribution](ThirdPartyNotices/SpeakerModels.md).
+
+Native speaker validation on the development Mac: the public model downloaded without authentication and passed Core ML loading in the sandboxed app. A 43.8-second synthetic two-voice consultation produced four stable alternating speaker intervals in about 5–6 seconds. The glossary test recognised metformin and penicillin; uncertain word assignments stayed unassigned. These checks are not a real microphone, overlap, or clinical-accuracy evaluation. The model cache is about 251 MB.
+
+### Patient and GP pathways
+
+The Mac app starts on a welcome screen with **Patient** and **GP workspace** cards. Patient opens the local browser intake form. GP workspace opens the native queue, with **Patient database** in its toolbar for record search/import and history. **Home** returns to the pathway chooser; stop an active recording first.
+
+The shared clinic URL now opens a browser landing page:
+- `/`: Patient / GP pathway chooser.
+- `/intake`: patient details and questionnaire; submitting creates or matches the patient and adds their visit to the queue.
+- `/gp`: handoff to `gpinthebox://workspace` on the clinic Mac. On a phone, it explains that the queue and records live in the Mac app.
+- `/thanks`: submission confirmation.
+
+This is workflow separation for the synthetic demo, not GP authentication. No queue or patient database API is exposed through the intake website.

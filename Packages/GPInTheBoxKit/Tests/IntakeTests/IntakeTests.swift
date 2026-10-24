@@ -36,7 +36,7 @@ actor Receipts { var all: [SubmissionReceipt] = []; func append(_ r: SubmissionR
     let app = Application(router: IntakeServer(store: store, onSubmission: { await receipts.append($0) }).buildRouter())
     let submitted = fields(old)
     try await app.test(.router) { client in
-        try await client.execute(uri: "/", method: .get) { response in
+        try await client.execute(uri: "/intake", method: .get) { response in
             #expect(response.status == .ok); #expect(String(buffer: response.body).contains("Brand new")); #expect(response.headers[.cacheControl] == "no-store")
         }
         for _ in 0..<2 {
@@ -119,8 +119,8 @@ actor Receipts { var all: [SubmissionReceipt] = []; func append(_ r: SubmissionR
     _ = try await store.publishQuestionnaire(q.questions)
     let app = Application(router: IntakeServer(store: store).buildRouter())
     try await app.test(.router) { client in
-        let first = try await client.execute(uri: "/", method: .get) { String(buffer: $0.body) }
-        let second = try await client.execute(uri: "/", method: .get) { String(buffer: $0.body) }
+        let first = try await client.execute(uri: "/intake", method: .get) { String(buffer: $0.body) }
+        let second = try await client.execute(uri: "/intake", method: .get) { String(buffer: $0.body) }
         #expect(first != second)
     }
 }
@@ -185,4 +185,29 @@ actor Receipts { var all: [SubmissionReceipt] = []; func append(_ r: SubmissionR
     #expect(recovered.answers.first?.value == "Previous visit: synthetic cough for three days")
     #expect(recovered.gpNote == "Synthetic previous GP note: review cough at next visit.")
     #expect(!history.visits.contains { $0.id == second.visitID })
+}
+
+@Test func landingSeparatesPatientFormFromNativeGPWorkspace() async throws {
+    let store = RecordStore(modelContainer: try GPInTheBoxSchema.makeContainer(inMemory: true))
+    _ = try await store.publishQuestionnaire(q.questions)
+    let app = Application(router: IntakeServer(store: store).buildRouter())
+    try await app.test(.router) { client in
+        try await client.execute(uri: "/", method: .get) { response in
+            let body = String(buffer: response.body)
+            #expect(response.status == .ok)
+            #expect(body.contains("href=\"/intake\"") && body.contains("href=\"/gp\""))
+            #expect(!body.contains("name=\"submissionID\""))
+            #expect(response.headers[.cacheControl] == "no-store")
+        }
+        try await client.execute(uri: "/gp", method: .get) { response in
+            let body = String(buffer: response.body)
+            #expect(response.status == .ok && body.contains("gpinthebox://workspace"))
+            #expect(body.contains("Patient records are not served"))
+        }
+        try await client.execute(uri: "/intake", method: .get) { response in
+            let body = String(buffer: response.body)
+            #expect(response.status == .ok && body.contains("name=\"submissionID\""))
+            #expect(!body.contains("gpinthebox://workspace"))
+        }
+    }
 }

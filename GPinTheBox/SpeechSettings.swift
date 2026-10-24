@@ -30,13 +30,13 @@ struct SpeechSettingsView: View {
                 Spacer()
                 if preparing {
                     ProgressView().controlSize(.small)
-                    Button("Cancel download") { cancelPreparation() }
+                    Button("Cancel") { cancelPreparation() }
                 } else {
                     Button(installed ? "Verify model" : "Download speaker model") { prepare() }
                         .buttonStyle(.borderedProminent)
                 }
             }
-            if preparing { Text("Downloading and preparing the model. The first load may take a few minutes.").font(.caption).foregroundStyle(.secondary) }
+            if preparing { Text(installed ? "Verifying the installed model on this Mac…" : "Downloading and preparing the model. The first load may take a few minutes.").font(.caption).foregroundStyle(.secondary) }
             Text("After recording, assign the detected voices to Doctor and Patient. Speaker labels may be wrong around overlapping speech; check the conversation before approving its summary.").font(.caption).foregroundStyle(.secondary)
             if let error { Text(error).foregroundStyle(.orange).textSelection(.enabled) }
             HStack {

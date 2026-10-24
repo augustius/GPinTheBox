@@ -86,6 +86,7 @@ func actualNativeTwoVoiceConversationProbe() async throws {
     print("Native+glossary transcript: \(transcript.text)")
     print("Native+glossary timed segments: \(transcript.segments.count), assigned: \(assigned), uncertain: \(transcript.segments.count - assigned)")
     #expect(!transcript.text.isEmpty && !transcript.segments.isEmpty)
+    #expect(transcript.text.lowercased().contains("metformin") && transcript.text.lowercased().contains("penicillin"))
     print("Native+glossary aligned speaker agreement: \(correct)/\(evaluable) evaluable timed segments")
     try report.joined(separator: "\n").write(to: fixture.appendingPathComponent("native-probe-conversation.txt"), atomically: true, encoding: .utf8)
     try encoder.encode(measurements).write(to: fixture.appendingPathComponent("native-probe-measurements.json"), options: .atomic)
