@@ -19,9 +19,12 @@ public enum InputMode: Sendable { case voice, typing }
     public private(set) var isListening = false
     public private(set) var isAskingStillThere = false
     public private(set) var transcript = ""
+    public private(set) var lastError: String?
     public var inputMode: InputMode {
         didSet {
-            guard inputMode != oldValue, case .asking = flow.phase else { return }
+            guard inputMode != oldValue else { return }
+            noteActivity()
+            guard case .asking = flow.phase else { return }
             runSession(inputMode == .voice ? .listen : .wait)
         }
     }
@@ -31,9 +34,13 @@ public enum InputMode: Sendable { case voice, typing }
     private let listener: (any AnswerListener)?
     private let tidier: AnswerTidier
     private let timings: KioskTimings
-    private var sessionTask: Task<Void, Never>?
+    @ObservationIgnored private var sessionTask: Task<Void, Never>?
+    @ObservationIgnored private var idleTask: Task<Void, Never>?
+    @ObservationIgnored private var doneTask: Task<Void, Never>?
+    @ObservationIgnored private var wiping: Task<Void, Never>?
     private var generation = 0
     private var appendsTyped = false
+    private var submissionID: UUID?
 
     public init(speaker: any QuestionSpeaker, listener: (any AnswerListener)?, tidier: AnswerTidier, timings: KioskTimings = .standard) {
         self.speaker = speaker; self.listener = listener; self.tidier = tidier; self.timings = timings
@@ -42,20 +49,21 @@ public enum InputMode: Sendable { case voice, typing }
 
     public func start() {
         guard submitter != nil, flow.phase == .welcome else { return }
-        flow.start(); runSession(.ask)
+        flow.start(); noteActivity(); runSession(.ask)
     }
 
     /// The **Done** button: ends the listen the way silence does, so the answer is kept.
     public func finishAnswer() {
         guard isListening, let listener else { return }
-        Task { await listener.stop() }
+        noteActivity(); Task { await listener.stop() }
     }
 
-    public func repeatQuestion() { if flow.currentIndex != nil { runSession(.ask) } }
-    public func skip() { if flow.skip() { runSession(.ask) } }
+    public func repeatQuestion() { noteActivity(); if flow.currentIndex != nil { runSession(.ask) } }
+    public func skip() { noteActivity(); if flow.skip() { runSession(.ask) } }
 
     public func submitTyped(_ text: String) {
         guard flow.currentIndex != nil else { return }
+        noteActivity()
         if appendsTyped, case .confirmingCandidate = flow.phase { flow.appendToCandidate(text) }
         else if !flow.answer(text) { return runSession(.ask) }
         appendTranscript(text); runSession(.prefill)
@@ -63,25 +71,99 @@ public enum InputMode: Sendable { case voice, typing }
 
     public func confirmCandidate() {
         guard case .confirmingCandidate = flow.phase else { return }
-        flow.confirmCandidate(); runSession(.ask)
+        noteActivity(); flow.confirmCandidate(); runSession(.ask)
     }
 
     public func addToCandidate() {
         guard case .confirmingCandidate = flow.phase else { return }
+        noteActivity()
         if inputMode == .typing { appendsTyped = true } else { runSession(.append) }
     }
-    public func replaceCandidate() { if case .confirmingCandidate = flow.phase { runSession(.listen) } }
+    public func replaceCandidate() { if case .confirmingCandidate = flow.phase { noteActivity(); runSession(.listen) } }
+
+    public func edit(_ index: Int, to text: String) { noteActivity(); flow.edit(index, to: text) }
+
+    /// Re-records one answer from review. Voice mode only: in typing mode the patient edits the answer instead.
+    public func respeak(_ index: Int) {
+        guard flow.phase == .review, inputMode == .voice, flow.questions.indices.contains(index) else { return }
+        noteActivity()
+        startSession { [self] gen in
+            let heard: String
+            do { guard let h = try await listen(gen), !h.isEmpty else { return }; heard = h }
+            catch { inputMode = .typing; return }
+            let text = await tidier.tidy(heard, for: flow.questions[index])
+            guard isLive(gen) else { return }
+            flow.edit(index, to: text)
+        }
+    }
+
+    public func send() {
+        guard let submitter, flow.phase != .sending else { return }
+        noteActivity(); flow.beginSending()
+        guard flow.phase == .sending else { return }
+        let id = submissionID ?? UUID()
+        submissionID = id; lastError = nil
+        let request = flow.request(submissionID: id)
+        startSession { [self] gen in
+            let outcome = await submitter.submit(request)
+            guard isLive(gen) else { return }
+            switch outcome {
+            case .accepted:
+                flow.sendSucceeded(); idleTask?.cancel(); isAskingStillThere = false
+                doneTask = Task { [self, delay = timings.doneReset] in if await pause(delay) { reset() } }
+            case .rejected(let message):
+                flow.sendFailed(message); flow.returnToReview(); lastError = message; noteActivity()
+            case .unreachable:
+                flow.sendFailed("Couldn't reach the clinic — ask reception"); noteActivity()
+            }
+        }
+    }
+
+    /// Restarts the idle clock and clears the "Are you still there?" prompt.
+    public func noteActivity() {
+        idleTask?.cancel(); idleTask = nil; isAskingStillThere = false
+        guard flow.phase != .welcome, flow.phase != .done else { return }
+        idleTask = Task { [self, idle = timings.idle, grace = timings.idleGrace] in
+            guard await pause(idle), countsIdle else { return }
+            isAskingStillThere = true
+            if await pause(grace) { reset() }
+        }
+    }
+
+    public func stillHere() { noteActivity() }
+
+    public func reset() {
+        sessionTask?.cancel(); sessionTask = nil; generation += 1
+        idleTask?.cancel(); idleTask = nil; doneTask?.cancel(); doneTask = nil
+        let previous = wiping
+        wiping = Task { [speaker, listener, tidier] in
+            await previous?.value; await speaker.stop(); await listener?.stop(); await tidier.reset()
+        }
+        flow = IntakeFlow(); caption = ""; transcript = ""; lastError = nil; submissionID = nil
+        isListening = false; isAskingStillThere = false; appendsTyped = false
+        inputMode = listener == nil ? .typing : .voice
+    }
+
+    private var countsIdle: Bool {
+        switch flow.phase { case .welcome, .sending, .done: false; default: true }
+    }
+
+    private func pause(_ delay: Duration) async -> Bool { (try? await Task.sleep(for: delay)) != nil && !Task.isCancelled }
 
     private func isLive(_ gen: Int) -> Bool { gen == generation && !Task.isCancelled }
 
-    private func runSession(_ entry: Entry) {
+    private func runSession(_ entry: Entry) { startSession { [self] gen in await loop(gen, entry) } }
+
+    /// Replaces the running session task; the body must check `isLive(gen)` after every await before writing state.
+    private func startSession(_ body: @escaping @MainActor (Int) async -> Void) {
         let interrupting = sessionTask != nil
         sessionTask?.cancel(); generation += 1; isListening = false; appendsTyped = false
-        let gen = generation
+        let gen = generation, wiping = wiping
         sessionTask = Task {
+            await wiping?.value
             if interrupting { await speaker.stop(); await listener?.stop() }
             guard isLive(gen) else { return }
-            await loop(gen, entry)
+            await body(gen)
         }
     }
 
@@ -125,6 +207,7 @@ public enum InputMode: Sendable { case voice, typing }
         do {
             for try await event in listener.listen() {
                 guard isLive(gen) else { break }
+                noteActivity()
                 switch event {
                 case .partial(let text): caption = text
                 case .final(let text): caption = text; heard = text
