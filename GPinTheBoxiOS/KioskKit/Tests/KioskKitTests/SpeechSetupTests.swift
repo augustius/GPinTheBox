@@ -25,3 +25,11 @@ import Foundation
     await speaker.speak("Hello")
     #expect(speaker.spoken == ["Hello"])
 }
+
+@Test func transcriptSegmentsJoinWithOneSpace() {
+    #expect(SpeechAnalyzerListener.joinTranscript("chest pain.", "It started Monday") == "chest pain. It started Monday")
+    #expect(SpeechAnalyzerListener.joinTranscript("chest pain. ", "It") == "chest pain. It")
+    #expect(SpeechAnalyzerListener.joinTranscript("chest", " pain") == "chest pain")
+    #expect(SpeechAnalyzerListener.joinTranscript("", "Jane") == "Jane")
+    #expect(SpeechAnalyzerListener.joinTranscript("Jane", "") == "Jane")
+}

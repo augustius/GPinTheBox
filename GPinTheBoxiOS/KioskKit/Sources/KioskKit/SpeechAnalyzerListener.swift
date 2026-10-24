@@ -46,8 +46,8 @@ public final class SpeechAnalyzerListener: AnswerListener, @unchecked Sendable {
             var finalized = ""
             for try await result in transcriber.results {
                 let text = String(result.text.characters)
-                if result.isFinal { finalized += text }
-                events.yield(.partial(result.isFinal ? finalized : finalized + text))
+                if result.isFinal { finalized = Self.joinTranscript(finalized, text) }
+                events.yield(.partial(result.isFinal ? finalized : Self.joinTranscript(finalized, text)))
             }
             return finalized
         }
@@ -65,6 +65,11 @@ public final class SpeechAnalyzerListener: AnswerListener, @unchecked Sendable {
         }
         events.yield(.final(try await results.value.trimmingCharacters(in: .whitespacesAndNewlines)))
         events.finish()
+    }
+
+    static func joinTranscript(_ head: String, _ tail: String) -> String {
+        guard let last = head.last, let first = tail.first, !last.isWhitespace, !first.isWhitespace else { return head + tail }
+        return head + " " + tail
     }
 
     private static func convert(_ buffer: AVAudioPCMBuffer, with converter: AVAudioConverter) -> AVAudioPCMBuffer? {
