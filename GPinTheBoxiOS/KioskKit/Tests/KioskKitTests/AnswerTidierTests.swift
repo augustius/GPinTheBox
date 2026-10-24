@@ -28,3 +28,17 @@ func realModelTidiesSyntheticJane() async throws {
     #expect(try await m.tidy("um my name is Jane Demo", for: KioskQuestions.fullName).contains("Jane Demo"))
     #expect(try await m.tidy("the first of May nineteen eighty", for: KioskQuestions.dateOfBirth) == "1980-05-01")
 }
+@Test func callerCancellationKeepsPrefillEnabled() async {
+    let t = AnswerTidier(model: FakeAnswerModel(delay: .seconds(1)))
+    let task = Task { await t.tidy(" a cough ", for: KioskQuestions.all[3]) }
+    try? await Task.sleep(for: .milliseconds(20))
+    task.cancel()
+    #expect(await task.value == "a cough")
+    #expect(await t.prefillEnabled)
+    await t.reset(); #expect(await t.prefillEnabled)
+}
+@Test(.enabled(if: FoundationModelsAnswerModel().isAvailable))
+func realModelDoesNotInventMissingDay() async throws {
+    let result = try await FoundationModelsAnswerModel().tidy("May nineteen eighty", for: KioskQuestions.dateOfBirth)
+    #expect(!KioskDate.isValidPastDOB(result), "invented a date: \(result)")
+}

@@ -4,7 +4,14 @@ import KioskProtocol
 
 @Generable private struct TidiedText { var answer: String }
 @Generable private struct TidiedID { @Guide(description: "Spell the ID as letters and digits.") var answer: String }
-@Generable private struct TidiedDate { var year: Int; var month: Int; var day: Int }
+@Generable private struct TidiedDate {
+    @Guide(description: "The words the patient used for the year, copied exactly, or nil if no year was said.") var spokenYear: String?
+    @Guide(description: "The words the patient used for the month, copied exactly, or nil if no month was said.") var spokenMonth: String?
+    @Guide(description: "The words the patient used for the day of the month, such as 'the first', copied exactly and not part of spokenYear, or nil if no day was said.") var spokenDay: String?
+    @Guide(description: "spokenYear as a four-digit number, or nil if spokenYear is nil.") var year: Int?
+    @Guide(description: "spokenMonth as a number from 1 to 12, or nil if spokenMonth is nil.") var month: Int?
+    @Guide(description: "spokenDay as a number from 1 to 31, or nil if spokenDay is nil.") var day: Int?
+}
 @Generable private struct PrefillCandidate {
     @Guide(description: "The number of the question this answers.") var questionNumber: Int
     @Guide(description: "The patient's own words answering that question.") var answer: String
@@ -25,7 +32,8 @@ public struct FoundationModelsAnswerModel: AnswerModel {
         case .identifier: return try await generate(prompt, TidiedID.self).answer
         case .dateOfBirth:
             let d = try await generate(prompt, TidiedDate.self)
-            return String(format: "%04d-%02d-%02d", d.year, d.month, d.day)
+            guard d.spokenYear != nil, d.spokenMonth != nil, d.spokenDay != nil, let year = d.year, let month = d.month, let day = d.day else { return transcript.trimmingCharacters(in: .whitespacesAndNewlines) }
+            return String(format: "%04d-%02d-%02d", year, month, day)
         case .fullName, .freeText: return try await generate(prompt, TidiedText.self).answer
         }
     }

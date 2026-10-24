@@ -22,7 +22,7 @@ public actor AnswerTidier {
         let model = model
         let output: String
         do { output = try await withTimeout(timeout) { try await model.tidy(transcript, for: question) } }
-        catch { prefillEnabled = false; return raw }
+        catch { disablePrefill(unlessCancelled: error); return raw }
         let tidied: String
         switch question.kind {
         case .identifier: tidied = AnswerFormatting.normaliseIdentifier(output)
@@ -36,8 +36,12 @@ public actor AnswerTidier {
         guard prefillEnabled else { return [:] }
         let model = model
         do { return try await withTimeout(timeout) { try await model.prefill(transcript: transcript, remaining: remaining) } }
-        catch { prefillEnabled = false; return [:] }
+        catch { disablePrefill(unlessCancelled: error); return [:] }
     }
 
     public func reset() { prefillEnabled = model.isAvailable }
+
+    private func disablePrefill(unlessCancelled error: any Error) {
+        if !(error is CancellationError) && !Task.isCancelled { prefillEnabled = false }
+    }
 }
