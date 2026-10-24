@@ -15,6 +15,7 @@ struct PatientDatabaseView: View {
     @State private var message: String?
     @State private var importRevision = 0
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
 
     var body: some View {
         VStack(spacing: 0) {
@@ -41,7 +42,7 @@ struct PatientDatabaseView: View {
                     }
                 }.padding().frame(minWidth: 280, idealWidth: 330, maxWidth: 420)
                 if let patient = patients.first(where: { $0.patient_id == selectedID }) {
-                    DatabasePatientDetail(patient: patient).id("\(patient.patient_id)-\(importRevision)")
+                    DatabasePatientDetail(patient: patient, onConsult: consult).id("\(patient.patient_id)-\(importRevision)")
                 } else {
                     ContentUnavailableView("Select a patient", systemImage: "person.text.rectangle", description: Text("Import the patient and consultation CSVs, then search by first name, last name, or Medicare number."))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -51,6 +52,14 @@ struct PatientDatabaseView: View {
         .fileImporter(isPresented: $choosingFiles, allowedContentTypes: [.commaSeparatedText], allowsMultipleSelection: true) { result in
             Task { await importFiles(result) }
         }
+    }
+    /// Starts (or reopens) today's consult for the patient on the app's main context, then shows it in the GP workspace.
+    @MainActor private func consult(_ patient: DatabasePatient) {
+        do {
+            let visit = try RecordMutations.startManualConsult(context: context, databasePatient: patient)
+            model.selectedVisitID = visit.id
+            dismiss()
+        } catch { message = "Couldn't start the consult: \(error.localizedDescription)" }
     }
     @MainActor private func importFiles(_ result: Result<[URL], Error>) async {
         importing = true
@@ -72,6 +81,7 @@ struct PatientDatabaseView: View {
 
 private struct DatabasePatientDetail: View {
     let patient: DatabasePatient
+    let onConsult: (DatabasePatient) -> Void
     @State private var json = ""
     @State private var question = "What allergies and current medications are recorded for this patient?"
     @State private var answer = ""
@@ -82,7 +92,14 @@ private struct DatabasePatientDetail: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("\(patient.first_name) \(patient.last_name)").font(.largeTitle.bold())
+                HStack(alignment: .firstTextBaseline) {
+                    Text("\(patient.first_name) \(patient.last_name)").font(.largeTitle.bold())
+                    Spacer()
+                    Button("Consult") { onConsult(patient) }
+                        .buttonStyle(.borderedProminent).tint(Color.careAccent).controlSize(.large)
+                        .disabled(patient.consultBlockReason != nil)
+                }
+                if let reason = patient.consultBlockReason { Text(reason).font(.callout).foregroundStyle(Color.careSecondary) }
                 Text("\(patient.patient_id) · Born \(patient.date_of_birth) · Medicare \(patient.medicare_number)").foregroundStyle(Color.careSecondary)
                 Text("\(patient.consultationNotes.count) consultation notes recovered").font(.headline)
                 GroupBox("Patient record") {

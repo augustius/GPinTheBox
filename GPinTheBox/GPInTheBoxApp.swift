@@ -352,18 +352,24 @@ struct PatientDetailView: View {
     private var intakeSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Today’s check-in").font(.title2.bold())
-            Text("Patient-reported · Read their answers before starting the consultation.")
-                .foregroundStyle(Color.careSecondary)
-            GroupBox {
-                VStack(alignment: .leading, spacing: 18) {
-                    ForEach(visit.answers, id: \.questionID) { answer in
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(answer.prompt).font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.careSecondary)
-                            Text(answer.value.isEmpty ? "Not provided" : answer.value)
-                                .foregroundStyle(answer.value.isEmpty ? Color.careSecondary : Color.careText).textSelection(.enabled)
+            if let databaseID = visit.databasePatientID {
+                Text("No intake — added by the GP from the patient database (\(databaseID))")
+                    .foregroundStyle(Color.careSecondary)
+                DatabaseProfileSummary(patientID: databaseID)
+            } else {
+                Text("Patient-reported · Read their answers before starting the consultation.")
+                    .foregroundStyle(Color.careSecondary)
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 18) {
+                        ForEach(visit.answers, id: \.questionID) { answer in
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(answer.prompt).font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.careSecondary)
+                                Text(answer.value.isEmpty ? "Not provided" : answer.value)
+                                    .foregroundStyle(answer.value.isEmpty ? Color.careSecondary : Color.careText).textSelection(.enabled)
+                            }
                         }
-                    }
-                }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                }
             }
             Button("Continue to recording") { section = .recording }.buttonStyle(.bordered).tint(Color.careAccent)
         }
@@ -426,6 +432,35 @@ struct PatientDetailView: View {
     }
     private func save() { do { try context.save(); error = nil } catch { self.error = "Could not save: \(error.localizedDescription)" } }
 }
+/// The live patient-database profile for a visit the GP started without an intake. Not patient-reported.
+struct DatabaseProfileSummary: View {
+    @Query private var matches: [DatabasePatient]
+    init(patientID: String) { _matches = Query(filter: #Predicate<DatabasePatient> { $0.patient_id == patientID }) }
+
+    var body: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 18) {
+                if let patient = matches.first {
+                    field("Allergies", patient.allergies)
+                    field("Current medications", patient.current_medications)
+                    field("Medical conditions", patient.medical_conditions)
+                    field("Notes", patient.notes)
+                } else {
+                    Text("Database record no longer available").foregroundStyle(Color.careSecondary)
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
+        }
+    }
+
+    private func field(_ label: String, _ value: String) -> some View {
+        let empty = value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return VStack(alignment: .leading, spacing: 5) {
+            Text(label).font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.careSecondary)
+            Text(empty ? "Not recorded" : value).foregroundStyle(empty ? Color.careSecondary : Color.careText).textSelection(.enabled)
+        }
+    }
+}
+
 struct IdentityEditor: View {
     let patient: Patient; let model: AppModel
     @Environment(\.dismiss) private var dismiss
