@@ -33,6 +33,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
         didSet {
             guard inputMode != oldValue else { return }
             noteActivity()
+            if inputMode == .voice { typingAt = nil }
             guard case .asking = flow.phase else { return }
             runSession(inputMode == .voice ? .listen : .wait)
         }
@@ -52,6 +53,8 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     private var appendsTyped = false
     private var listeningAppends = false
     private var respeakGeneration: Int?
+    /// The question the patient has started typing an answer to: the mic stays closed for it until they submit, repeat it or move on.
+    private var typingAt: Int?
     private var promptedPhase: FlowPhase?
     private var nextMessageID = 0
     private var submissionID: UUID?
@@ -72,7 +75,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
         noteActivity(); Task { await listener.stop() }
     }
 
-    public func repeatQuestion() { noteActivity(); if flow.currentIndex != nil { showPrompt(force: true); runSession(.ask) } }
+    public func repeatQuestion() { noteActivity(); typingAt = nil; if flow.currentIndex != nil { showPrompt(force: true); runSession(.ask) } }
     public func skip() {
         noteActivity()
         guard let i = flow.currentIndex, flow.skip() else { return }
@@ -81,14 +84,17 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
 
     public func submitTyped(_ text: String) {
         guard let i = flow.currentIndex else { return }
-        noteActivity()
+        noteActivity(); typingAt = nil
         if appendsTyped, case .confirmingCandidate = flow.phase { flow.appendToCandidate(text) }
         else if !flow.answer(text) { showPrompt(force: true); return runSession(.ask) }
         record(i); showPrompt(); appendTranscript(text); runSession(.prefill)
     }
 
-    /// The patient started typing while the mic was open: drop the spoken attempt (nothing is submitted) and wait for the typed answer.
+    /// The patient started typing: the mic stays closed for this question (even if it hasn't opened yet). If it was open,
+    /// the spoken attempt is dropped (nothing is submitted) and the typed answer is awaited.
     public func beginTyping() {
+        guard let i = flow.currentIndex else { return }
+        typingAt = i
         guard isListening, let listener else { return }
         noteActivity()
         sessionTask?.cancel(); sessionTask = nil; generation += 1
@@ -179,7 +185,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
             await previous?.value; await speaker.stop(); await listener?.stop(); await tidier.reset()
         }
         flow = IntakeFlow(); caption = ""; transcript = ""; lastError = nil; submissionID = nil
-        isListening = false; isAskingStillThere = false; appendsTyped = false
+        isListening = false; isAskingStillThere = false; appendsTyped = false; typingAt = nil
         messages = []; promptedPhase = nil
         inputMode = listener == nil ? .typing : .voice
     }
@@ -221,6 +227,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
                 flow.addCandidates(found); showPrompt(); entry = .ask; continue
             }
             guard inputMode == .voice else { return }
+            if typingAt == i { appendsTyped = entry == .append; return }
             listeningAppends = entry == .append
             let heard: String
             do { guard let h = try await listen(gen) else { return }; heard = h }

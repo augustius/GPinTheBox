@@ -108,3 +108,17 @@ import Testing
     await eventually { c.flow.phase == .asking(2) }
     #expect(c.flow.answers[1] == "DEMO001 X")
 }
+@MainActor @Test func typingWhileQuestionIsSpokenKeepsMicClosed() async throws {
+    let listener = FakeListener(script: [])
+    let c = KioskController(speaker: FakeSpeaker(delay: .milliseconds(100)), listener: listener,
+                            tidier: AnswerTidier(model: FakeAnswerModel(), timeout: .milliseconds(100)), timings: .test)
+    c.submitter = Submitter(transport: FakeTransport(results: []))
+    c.start(); c.beginTyping()
+    try await Task.sleep(for: .milliseconds(250))
+    #expect(listener.listens == 0 && !c.isListening && c.inputMode == .voice)
+    c.repeatQuestion(); await eventually { c.isListening }
+    #expect(listener.listens == 1)
+    c.beginTyping(); c.submitTyped("Jane Demo")
+    await eventually { c.flow.phase == .asking(1) && c.isListening }
+    #expect(listener.listens == 2 && c.flow.answers[0] == "Jane Demo")
+}

@@ -39,8 +39,14 @@ actor FakeTransport: KioskTransport {
 
 final class FakeSpeaker: QuestionSpeaker {
     private let log = Mutex<[String]>([])
+    private let delay: Duration?
     var spoken: [String] { log.withLock { $0 } }
-    func speak(_ text: String) async { log.withLock { $0.append(text) } }
+    /// With `delay`, each `speak` takes that long, as a real spoken question does.
+    init(delay: Duration? = nil) { self.delay = delay }
+    func speak(_ text: String) async {
+        log.withLock { $0.append(text) }
+        if let delay { try? await Task.sleep(for: delay) }
+    }
     func stop() async {}
 }
 
