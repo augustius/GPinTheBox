@@ -37,3 +37,37 @@ import Testing
     c.start(); await eventually { c.isListening }; c.repeatQuestion()
     await eventually { speaker.spoken == ["Full name", "Full name"] }
 }
+@MainActor @Test func listenErrorFallsBackToTyping() async throws {
+    let speaker = FakeSpeaker()
+    let c = KioskController(speaker: speaker, listener: FakeListener(script: [], failure: FakeError()),
+                            tidier: AnswerTidier(model: FakeAnswerModel()), timings: .test)
+    c.submitter = Submitter(transport: FakeTransport(results: []))
+    c.start(); await eventually { c.inputMode == .typing }
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(c.flow.phase == .asking(0) && c.flow.answers[0] == "" && !c.isListening)
+    #expect(speaker.spoken == ["Full name"])
+}
+@MainActor func typingAtCandidate(_ listener: FakeListener? = nil) async -> KioskController {
+    let c = KioskController(speaker: FakeSpeaker(), listener: listener,
+                            tidier: AnswerTidier(model: FakeAnswerModel(prefill: [1: "DEMO001"])), timings: .test)
+    c.submitter = Submitter(transport: FakeTransport(results: []))
+    c.inputMode = .typing
+    c.start(); c.submitTyped("Jane Demo")
+    await eventually { c.flow.phase == .confirmingCandidate(1) }
+    return c
+}
+@MainActor @Test func typedAddAndReplaceCandidate() async {
+    let add = await typingAtCandidate()
+    add.addToCandidate(); add.submitTyped("extra")
+    #expect(add.flow.answers[1] == "DEMO001 extra" && add.flow.phase == .asking(2))
+    let replace = await typingAtCandidate()
+    replace.replaceCandidate(); replace.submitTyped("NEW1")
+    #expect(replace.flow.answers[1] == "NEW1" && replace.flow.phase == .asking(2))
+}
+@MainActor @Test func typingModeAddDoesNotOpenMic() async throws {
+    let listener = FakeListener(script: [])
+    let c = await typingAtCandidate(listener)
+    c.addToCandidate(); try await Task.sleep(for: .milliseconds(100))
+    c.replaceCandidate(); try await Task.sleep(for: .milliseconds(100))
+    #expect(listener.listens == 0 && !c.isListening)
+}

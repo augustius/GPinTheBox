@@ -45,14 +45,18 @@ final class FakeSpeaker: QuestionSpeaker {
 }
 
 final class FakeListener: AnswerListener {
-    private struct State { var scripts: [[ListenEvent]]; var waiting: [AsyncThrowingStream<ListenEvent, Error>.Continuation] = [] }
+    private struct State { var scripts: [[ListenEvent]]; var waiting: [AsyncThrowingStream<ListenEvent, Error>.Continuation] = []; var listens = 0 }
     private let state: Mutex<State>
-    init(script: [[ListenEvent]]) { state = Mutex(State(scripts: script)) }
+    private let failure: (any Error & Sendable)?
+    var listens: Int { state.withLock { $0.listens } }
+    /// With `failure`, every `listen()` ends at once with that error.
+    init(script: [[ListenEvent]], failure: (any Error & Sendable)? = nil) { state = Mutex(State(scripts: script)); self.failure = failure }
 
     func listen() -> AsyncThrowingStream<ListenEvent, Error> {
         let (stream, continuation) = AsyncThrowingStream<ListenEvent, Error>.makeStream()
+        if let failure { state.withLock { $0.listens += 1 }; continuation.finish(throwing: failure); return stream }
         let events = state.withLock { s in
-            s.waiting.append(continuation)
+            s.listens += 1; s.waiting.append(continuation)
             return s.scripts.isEmpty ? [] : s.scripts.removeFirst()
         }
         events.forEach { continuation.yield($0) }

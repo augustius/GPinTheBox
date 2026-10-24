@@ -33,6 +33,7 @@ public enum InputMode: Sendable { case voice, typing }
     private let timings: KioskTimings
     private var sessionTask: Task<Void, Never>?
     private var generation = 0
+    private var appendsTyped = false
 
     public init(speaker: any QuestionSpeaker, listener: (any AnswerListener)?, tidier: AnswerTidier, timings: KioskTimings = .standard) {
         self.speaker = speaker; self.listener = listener; self.tidier = tidier; self.timings = timings
@@ -55,7 +56,8 @@ public enum InputMode: Sendable { case voice, typing }
 
     public func submitTyped(_ text: String) {
         guard flow.currentIndex != nil else { return }
-        guard flow.answer(text) else { return runSession(.ask) }
+        if appendsTyped, case .confirmingCandidate = flow.phase { flow.appendToCandidate(text) }
+        else if !flow.answer(text) { return runSession(.ask) }
         appendTranscript(text); runSession(.prefill)
     }
 
@@ -64,14 +66,17 @@ public enum InputMode: Sendable { case voice, typing }
         flow.confirmCandidate(); runSession(.ask)
     }
 
-    public func addToCandidate() { if case .confirmingCandidate = flow.phase { runSession(.append) } }
+    public func addToCandidate() {
+        guard case .confirmingCandidate = flow.phase else { return }
+        if inputMode == .typing { appendsTyped = true } else { runSession(.append) }
+    }
     public func replaceCandidate() { if case .confirmingCandidate = flow.phase { runSession(.listen) } }
 
     private func isLive(_ gen: Int) -> Bool { gen == generation && !Task.isCancelled }
 
     private func runSession(_ entry: Entry) {
         let interrupting = sessionTask != nil
-        sessionTask?.cancel(); generation += 1; isListening = false
+        sessionTask?.cancel(); generation += 1; isListening = false; appendsTyped = false
         let gen = generation
         sessionTask = Task {
             if interrupting { await speaker.stop(); await listener?.stop() }
@@ -93,7 +98,10 @@ public enum InputMode: Sendable { case voice, typing }
                 guard isLive(gen) else { return }
                 flow.addCandidates(found); entry = .ask; continue
             }
-            guard let heard = await listen(gen) else { return }
+            guard inputMode == .voice else { return }
+            let heard: String
+            do { guard let h = try await listen(gen) else { return }; heard = h }
+            catch { inputMode = .typing; appendsTyped = entry == .append; return }
             appendTranscript(heard)
             let text = heard.isEmpty ? "" : await tidier.tidy(heard, for: flow.questions[i])
             // Prefill runs before the answer lands, so the phase change and the next question are back to back.
@@ -109,8 +117,8 @@ public enum InputMode: Sendable { case voice, typing }
         return remaining.isEmpty ? [:] : await tidier.prefill(transcript: transcript, remaining: remaining)
     }
 
-    /// Listens until the stream ends; returns the last finalized text, or nil if the session moved on.
-    private func listen(_ gen: Int) async -> String? {
+    /// Listens until the stream ends; returns the last finalized text, or nil if the session moved on. Throws if listening failed.
+    private func listen(_ gen: Int) async throws -> String? {
         guard let listener else { return nil }
         caption = ""; isListening = true
         var heard = "", silence: Task<Void, Never>?
@@ -127,7 +135,11 @@ public enum InputMode: Sendable { case voice, typing }
                     await listener.stop()
                 }
             }
-        } catch {}
+        } catch {
+            silence?.cancel()
+            guard isLive(gen) else { return nil }
+            isListening = false; throw error
+        }
         silence?.cancel()
         guard isLive(gen) else { return nil }
         isListening = false
