@@ -1,3 +1,4 @@
+import Synchronization
 import KioskProtocol
 @testable import KioskKit
 
@@ -32,5 +33,32 @@ actor FakeTransport: KioskTransport {
         requests.append(request)
         guard !results.isEmpty else { throw FakeError() }
         return try results.removeFirst().get()
+    }
+}
+
+final class FakeSpeaker: QuestionSpeaker {
+    private let log = Mutex<[String]>([])
+    var spoken: [String] { log.withLock { $0 } }
+    func speak(_ text: String) async { log.withLock { $0.append(text) } }
+    func stop() async {}
+}
+
+final class FakeListener: AnswerListener {
+    private struct State { var scripts: [[ListenEvent]]; var waiting: [AsyncThrowingStream<ListenEvent, Error>.Continuation] = [] }
+    private let state: Mutex<State>
+    init(script: [[ListenEvent]]) { state = Mutex(State(scripts: script)) }
+
+    func listen() -> AsyncThrowingStream<ListenEvent, Error> {
+        let (stream, continuation) = AsyncThrowingStream<ListenEvent, Error>.makeStream()
+        let events = state.withLock { s in
+            s.waiting.append(continuation)
+            return s.scripts.isEmpty ? [] : s.scripts.removeFirst()
+        }
+        events.forEach { continuation.yield($0) }
+        return stream
+    }
+
+    func stop() async {
+        state.withLock { s in defer { s.waiting = [] }; return s.waiting }.forEach { $0.finish() }
     }
 }
