@@ -66,6 +66,10 @@ final class FakeListener: AnswerListener {
     func stop() async {
         state.withLock { s in defer { s.waiting = [] }; return s.waiting }.forEach { $0.finish() }
     }
+    /// True while a `listen()` stream is still open (not yet stopped).
+    var isOpen: Bool { state.withLock { !$0.waiting.isEmpty } }
+    /// Sends a late event to every open `listen()` stream, as speech heard nearby would.
+    func deliver(_ event: ListenEvent) { state.withLock { $0.waiting }.forEach { $0.yield(event) } }
 }
 
 extension KioskTimings {

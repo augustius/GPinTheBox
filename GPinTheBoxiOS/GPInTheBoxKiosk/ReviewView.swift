@@ -57,6 +57,7 @@ private struct EditAnswerSheet: View {
                 if controller.inputMode == .voice {
                     Button(controller.isListening ? "Listening…" : "Speak again") { controller.respeak(index) }
                         .disabled(controller.isListening)
+                    if controller.isListening { Button("Done") { controller.finishAnswer() }.bold() }
                     if !controller.caption.isEmpty && controller.isListening { Text(controller.caption).foregroundStyle(.secondary) }
                 }
             }
@@ -69,7 +70,12 @@ private struct EditAnswerSheet: View {
         }
         .onAppear { text = controller.flow.answers[index] }
         .onChange(of: controller.flow.answers[index]) { text = controller.flow.answers[index] }
-        .onChange(of: text) { controller.noteActivity() }
+        .onChange(of: text) {
+            controller.noteActivity()
+            // Typing replaces a re-record in progress, so what the mic hears later can't overwrite the draft.
+            if text != controller.flow.answers[index] { controller.cancelRespeak() }
+        }
+        .onDisappear { controller.cancelRespeak() }
     }
 
     private func save() { controller.edit(index, to: text); dismiss() }

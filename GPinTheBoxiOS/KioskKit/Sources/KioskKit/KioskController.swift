@@ -51,6 +51,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     private var generation = 0
     private var appendsTyped = false
     private var listeningAppends = false
+    private var respeakGeneration: Int?
     private var promptedPhase: FlowPhase?
     private var nextMessageID = 0
     private var submissionID: UUID?
@@ -107,7 +108,17 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     }
     public func replaceCandidate() { if case .confirmingCandidate = flow.phase { noteActivity(); runSession(.listen) } }
 
-    public func edit(_ index: Int, to text: String) { noteActivity(); flow.edit(index, to: text) }
+    /// Saves a typed review edit; a re-record still open for any answer is dropped first, so late speech can't overwrite it.
+    public func edit(_ index: Int, to text: String) { noteActivity(); cancelRespeak(); flow.edit(index, to: text) }
+
+    /// Ends a review re-record without keeping anything heard (the edit sheet closed, or the patient typed instead).
+    public func cancelRespeak() {
+        guard let gen = respeakGeneration, gen == generation else { return }
+        respeakGeneration = nil
+        sessionTask?.cancel(); sessionTask = nil; generation += 1
+        isListening = false; caption = ""
+        if let listener { Task { await listener.stop() } }
+    }
 
     /// Re-records one answer from review. Voice mode only: in typing mode the patient edits the answer instead.
     public func respeak(_ index: Int) {
@@ -121,6 +132,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
             guard isLive(gen) else { return }
             flow.edit(index, to: text)
         }
+        respeakGeneration = generation
     }
 
     public func send() {

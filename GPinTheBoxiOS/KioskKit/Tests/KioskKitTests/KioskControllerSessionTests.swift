@@ -65,3 +65,22 @@ import Testing
     c.send()
     #expect(c.flow.phase == .sendFailed("Couldn't reach the clinic — ask reception"))
 }
+@MainActor @Test func editDuringRespeakWinsOverLateSpeech() async throws {
+    let listener = FakeListener(script: [])
+    let c = await controllerAtReview(FakeTransport(results: []), listener: listener)
+    c.inputMode = .voice; c.respeak(0); await eventually { c.isListening }
+    c.edit(0, to: "Jane Typed")
+    try await Task.sleep(for: .milliseconds(20))
+    listener.deliver(.final("yeah")); try await Task.sleep(for: .milliseconds(200))
+    #expect(c.flow.answers[0] == "Jane Typed" && !c.isListening)
+}
+@MainActor @Test func cancelRespeakStopsListeningAndKeepsAnswer() async throws {
+    let listener = FakeListener(script: [[.partial("Jo")]])
+    let c = await controllerAtReview(FakeTransport(results: []), listener: listener)
+    c.inputMode = .voice; c.respeak(0); await eventually { c.caption == "Jo" }
+    c.cancelRespeak()
+    #expect(!c.isListening && c.caption.isEmpty)
+    await eventually { !listener.isOpen }
+    listener.deliver(.final("John Smith")); try await Task.sleep(for: .milliseconds(150))
+    #expect(c.flow.answers[0] == "Jane Demo" && !c.isListening && c.flow.phase == .review)
+}
