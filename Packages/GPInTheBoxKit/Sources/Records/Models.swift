@@ -39,10 +39,10 @@ public struct QuestionnaireSnapshot: Codable, Hashable, Sendable {
         id = UUID(); self.fullName = fullName; self.medicareID = MedicareID.normalise(medicareID)
         self.dateOfBirth = dateOfBirth; revision = UUID(); visits = []
     }
-    public func snapshot() -> PatientSnapshot {
+    public func snapshot(consultations: [Consultation] = []) -> PatientSnapshot {
         PatientSnapshot(id: id, fullName: fullName, dateOfBirth: dateOfBirth, revision: revision,
-            visits: visits.sorted { $0.arrivedAt == $1.arrivedAt ? $0.id.uuidString < $1.id.uuidString : $0.arrivedAt < $1.arrivedAt }.map {
-                VisitSnapshot(id: $0.id, arrivedAt: $0.arrivedAt, answers: $0.answers, gpNote: $0.gpNote, noteUpdatedAt: $0.noteUpdatedAt)
+            visits: visits.sorted { $0.arrivedAt == $1.arrivedAt ? $0.id.uuidString < $1.id.uuidString : $0.arrivedAt < $1.arrivedAt }.map { visit in
+                VisitSnapshot(id: visit.id, arrivedAt: visit.arrivedAt, answers: visit.answers, gpNote: visit.gpNote, noteUpdatedAt: visit.noteUpdatedAt, consultationSummaries: consultations.filter { $0.patientID == id && $0.visitID == visit.id }.sorted { $0.startedAt < $1.startedAt }.compactMap { $0.approvedSnapshot() })
             })
     }
 }
@@ -89,8 +89,9 @@ public struct QuestionnaireSnapshot: Codable, Hashable, Sendable {
 }
 public struct VisitSnapshot: Sendable, Equatable {
     public var id: UUID; public var arrivedAt: Date; public var answers: [Answer]; public var gpNote: String; public var noteUpdatedAt: Date?
-    public init(id: UUID = UUID(), arrivedAt: Date = .now, answers: [Answer], gpNote: String = "", noteUpdatedAt: Date? = nil) {
-        self.id = id; self.arrivedAt = arrivedAt; self.answers = answers; self.gpNote = gpNote; self.noteUpdatedAt = noteUpdatedAt
+    public var consultationSummaries: [ConsultationSummarySnapshot]
+    public init(id: UUID = UUID(), arrivedAt: Date = .now, answers: [Answer], gpNote: String = "", noteUpdatedAt: Date? = nil, consultationSummaries: [ConsultationSummarySnapshot] = []) {
+        self.id = id; self.arrivedAt = arrivedAt; self.answers = answers; self.gpNote = gpNote; self.noteUpdatedAt = noteUpdatedAt; self.consultationSummaries = consultationSummaries
     }
 }
 public struct PatientSnapshot: Sendable, Equatable {

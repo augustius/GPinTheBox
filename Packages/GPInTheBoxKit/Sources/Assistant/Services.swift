@@ -125,9 +125,9 @@ public struct Summarizer: Sendable {
             throw AssistantError.unsupportedEvidence
         }
         var followUps: [FollowUpResult] = [], incomplete = false
-        if let previous = patient.visits.dropLast().last(where: { !$0.gpNote.isEmpty }) {
+        if let previous = patient.visits.dropLast().last(where: { !$0.gpNote.isEmpty || !$0.consultationSummaries.isEmpty }) {
             let all = RecordChunker.chunks(for: patient)
-            let notes = all.filter { $0.visitID == previous.id && $0.source == .gpEntered }
+            let notes = all.filter { $0.visitID == previous.id && ($0.source == .gpEntered || $0.source == .gpReviewedSummary) }
             let today = all.filter { $0.visitID == visitID && $0.source == .patientReported }
             var followUpBudget = 2400
             for attempt in 0...3 {
@@ -178,7 +178,7 @@ public struct Summarizer: Sendable {
         }
         return (results, incomplete)
     }
-    private func reduce(_ original: [Chunk], budget: Int, focus: String) async throws -> CitedText {
+    func reduce(_ original: [Chunk], budget: Int, focus: String) async throws -> CitedText {
         if original.isEmpty { return CitedText(claims: []) }
         let originals = ContextBudget.split(original, maxBytes: budget)
         var current = originals

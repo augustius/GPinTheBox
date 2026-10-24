@@ -28,6 +28,7 @@ import UserNotifications
     var serverError: String?
     var availability: ModelAvailability = .available
     var selectedVisitID: UUID?
+    var recordingVisitID: UUID?
     var arrivalRevision = 0
     var embedder: ContextualEmbedder?
     private var started = false
@@ -136,6 +137,7 @@ struct SelectedPatient: View {
 struct PatientDetailView: View {
     @Bindable var visit: Visit
     @Query(sort: \Visit.arrivedAt) private var allVisits: [Visit]
+    @Query(sort: \Consultation.startedAt) private var allConsultations: [Consultation]
     let model: AppModel
     @Environment(\.modelContext) private var context
     @State private var error: String?
@@ -151,7 +153,7 @@ struct PatientDetailView: View {
                         }
                         Spacer()
                         Button("Correct identity") { correcting = true }
-                        Button("Finish visit") { visit.finish(); save() }.buttonStyle(.borderedProminent).tint(.teal).disabled(visit.status == .done)
+                        Button("Finish visit") { visit.finish(); save() }.buttonStyle(.borderedProminent).tint(.teal).disabled(visit.status == .done || model.recordingVisitID == visit.id)
                     }
                     if let error { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red) }
                     GroupBox {
@@ -164,6 +166,7 @@ struct PatientDetailView: View {
                             visit.gpNote = value; visit.noteUpdatedAt = .now; patient.revision = UUID(); save()
                         })).font(.body).frame(minHeight: 130).padding(8)
                     } label: { Label("GP note", systemImage: "square.and.pencil") }
+                    ConsultationPanel(visit: visit, model: model)
                     let past = allVisits.filter { $0.patient?.id == patient.id }.filter { $0.id != visit.id && $0.arrivedAt <= visit.arrivedAt }.sorted { $0.arrivedAt > $1.arrivedAt }
                     if !past.isEmpty {
                         GroupBox {
@@ -172,6 +175,17 @@ struct PatientDetailView: View {
                                     VStack(alignment: .leading, spacing: 10) {
                                         ForEach(previous.answers, id: \.questionID) { answer in Text("\(answer.prompt)\n\(answer.value.isEmpty ? "Not provided" : answer.value)") }
                                         Text("GP note: \(previous.gpNote.isEmpty ? "None" : previous.gpNote)").fontWeight(.medium)
+                                        ForEach(allConsultations.filter { $0.visitID == previous.id && $0.patientID == patient.id }) { consultation in
+                                            if let approved = consultation.approvedSnapshot() {
+                                                Text("GP-reviewed consultation summary").font(.headline)
+                                                Text(approved.text)
+                                                Text("Approved \(approved.approvedAt.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary)
+                                            }
+                                            if consultation.wasInterrupted { Text("Partial recording: the transcript may not cover the whole consultation.").font(.caption).foregroundStyle(.orange) }
+                                            if !consultation.transcript.isEmpty {
+                                                DisclosureGroup("Consultation transcript · \(consultation.startedAt.formatted(date: .omitted, time: .shortened))") { Text(consultation.transcript).padding(.top, 6) }
+                                            }
+                                        }
                                     }.textSelection(.enabled).padding()
                                 }
                             }}.padding(10).frame(maxWidth: .infinity, alignment: .leading)
@@ -189,8 +203,11 @@ struct PatientDetailView: View {
         // an already-loaded inverse relationship. Build history from the live query.
         let history = allVisits.filter { $0.patient?.id == patient.id }.sorted {
             $0.arrivedAt == $1.arrivedAt ? $0.id.uuidString < $1.id.uuidString : $0.arrivedAt < $1.arrivedAt
-        }.map { VisitSnapshot(id: $0.id, arrivedAt: $0.arrivedAt, answers: $0.answers, gpNote: $0.gpNote, noteUpdatedAt: $0.noteUpdatedAt) }
+        }.map { VisitSnapshot(id: $0.id, arrivedAt: $0.arrivedAt, answers: $0.answers, gpNote: $0.gpNote, noteUpdatedAt: $0.noteUpdatedAt, consultationSummaries: consultationSummaries(for: $0.id)) }
         return PatientSnapshot(id: patient.id, fullName: patient.fullName, dateOfBirth: patient.dateOfBirth, revision: patient.revision, visits: history)
+    }
+    private func consultationSummaries(for visitID: UUID) -> [ConsultationSummarySnapshot] {
+        allConsultations.filter { $0.visitID == visitID && $0.patientID == visit.patient?.id }.compactMap { $0.approvedSnapshot() }
     }
     private func save() { do { try context.save(); error = nil } catch { self.error = "Could not save: \(error.localizedDescription)" } }
 }

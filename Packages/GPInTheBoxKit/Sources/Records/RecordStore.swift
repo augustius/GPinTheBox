@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 
 public enum GPInTheBoxSchema {
-    public static var schema: Schema { Schema([Patient.self, Visit.self, QuestionnaireVersion.self, StoredSubmission.self]) }
+    public static var schema: Schema { Schema([Patient.self, Visit.self, QuestionnaireVersion.self, StoredSubmission.self, Consultation.self]) }
     public static func makeContainer(inMemory: Bool = false, url: URL? = nil) throws -> ModelContainer {
         let config = url.map { ModelConfiguration(schema: schema, url: $0, cloudKitDatabase: .none) }
             ?? ModelConfiguration(schema: schema, isStoredInMemoryOnly: inMemory, cloudKitDatabase: .none)
@@ -84,7 +84,8 @@ public enum GPInTheBoxSchema {
     }
     public func snapshot(patientID: UUID) throws -> PatientSnapshot {
         guard let p = try modelContext.fetch(FetchDescriptor<Patient>(predicate: #Predicate { $0.id == patientID })).first else { throw RecordError.missingPatient }
-        return p.snapshot()
+        let consultations = try modelContext.fetch(FetchDescriptor<Consultation>(predicate: #Predicate { $0.patientID == patientID }))
+        return p.snapshot(consultations: consultations)
     }
 }
 

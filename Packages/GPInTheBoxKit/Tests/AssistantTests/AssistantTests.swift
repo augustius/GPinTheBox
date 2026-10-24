@@ -6,7 +6,7 @@ import Records
 struct FakeModel: AssistantModel {
     var status: ModelAvailability = .available
     var handler: @Sendable (String, String) async throws -> ModelAnswer = { _, prompt in
-        guard let line = prompt.split(separator: "\n").first(where: { $0.hasPrefix("[") }), let close = line.firstIndex(of: "]"), let end = line.firstIndex(of: ")") else { return ModelAnswer(claims: []) }
+        guard let line = prompt.split(separator: "\n").first(where: { $0.hasPrefix("[") }), let close = line.firstIndex(of: "]"), let end = line.range(of: ") ")?.lowerBound else { return ModelAnswer(claims: []) }
         let id = String(line[line.index(after: line.startIndex)..<close]), quote = String(line[line.index(after: end)...]).trimmingCharacters(in: .whitespaces)
         return ModelAnswer(claims: [GeneratedClaim(text: "Cough reported.", chunkIDs: [id], quotes: [quote])])
     }
