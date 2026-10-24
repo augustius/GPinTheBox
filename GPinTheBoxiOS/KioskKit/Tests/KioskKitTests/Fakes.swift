@@ -79,17 +79,19 @@ final class FakeListener: AnswerListener {
 }
 
 extension KioskTimings {
-    static let test = KioskTimings(silence: .milliseconds(30), idle: .seconds(60), idleGrace: .seconds(60), doneReset: .seconds(60))
-    func with(idle: Duration? = nil, idleGrace: Duration? = nil, doneReset: Duration? = nil) -> KioskTimings {
-        KioskTimings(silence: silence, idle: idle ?? self.idle, idleGrace: idleGrace ?? self.idleGrace, doneReset: doneReset ?? self.doneReset)
+    static let test = KioskTimings(silence: .milliseconds(30), idle: .seconds(60), idleGrace: .seconds(60), doneReset: .seconds(60), cantProceedReset: .seconds(60))
+    func with(idle: Duration? = nil, idleGrace: Duration? = nil, doneReset: Duration? = nil, cantProceedReset: Duration? = nil) -> KioskTimings {
+        KioskTimings(silence: silence, idle: idle ?? self.idle, idleGrace: idleGrace ?? self.idleGrace, doneReset: doneReset ?? self.doneReset,
+                     cantProceedReset: cantProceedReset ?? self.cantProceedReset)
     }
 }
 
 @MainActor func makeController(_ script: [[ListenEvent]], model: FakeAnswerModel = FakeAnswerModel(),
-                               transport: FakeTransport = FakeTransport(results: [.success(.ok)])) -> (KioskController, FakeSpeaker) {
+                               transport: FakeTransport = FakeTransport(results: [.success(.ok)]), seed: UInt64 = 1,
+                               timings: KioskTimings = .test) -> (KioskController, FakeSpeaker) {
     let speaker = FakeSpeaker()
     let c = KioskController(speaker: speaker, listener: FakeListener(script: script),
-                            tidier: AnswerTidier(model: model, timeout: .milliseconds(100)), timings: .test)
+                            tidier: AnswerTidier(model: model, timeout: .milliseconds(100)), timings: timings, seed: seed)
     c.submitter = Submitter(transport: transport)
     return (c, speaker)
 }

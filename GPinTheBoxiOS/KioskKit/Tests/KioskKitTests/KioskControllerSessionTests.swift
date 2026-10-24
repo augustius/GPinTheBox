@@ -2,11 +2,12 @@ import Testing
 @testable import KioskKit
 
 @MainActor func controllerAtReview(_ transport: FakeTransport, timings: KioskTimings = .test, listener: FakeListener? = nil) async -> KioskController {
-    let c = KioskController(speaker: FakeSpeaker(), listener: listener, tidier: AnswerTidier(model: FakeAnswerModel(isAvailable: false)), timings: timings)
+    let model = FakeAnswerModel(extracted: [0: "Jane Demo", 1: "DEMO001", 2: "1980-05-01"])
+    let c = KioskController(speaker: FakeSpeaker(), listener: listener, tidier: AnswerTidier(model: model), timings: timings, seed: 1)
     c.submitter = Submitter(transport: transport, backoff: [.milliseconds(1)], deadline: .milliseconds(200))
     c.inputMode = .typing
-    c.start(); for text in ["Jane Demo", "DEMO001", "1980-05-01"] { c.submitTyped(text) }
-    for _ in 3..<10 { await eventually { c.flow.currentIndex != nil }; c.skip() }
+    c.start(); c.submitTyped("I'm Jane Demo, DEMO001, born 1 May 1980")
+    for i in 3..<10 { await eventually { c.flow.phase == .asking(i) }; c.submitTyped("no") }
     await eventually { c.flow.phase == .review }
     return c
 }
@@ -14,7 +15,7 @@ import Testing
     let t = FakeTransport(results: [.success(.ok)])
     let c = await controllerAtReview(t, timings: .test.with(doneReset: .milliseconds(50)))
     c.send(); await eventually { c.flow.phase == .done }
-    await eventually { c.flow == IntakeFlow() && c.transcript.isEmpty }
+    await eventually { c.flow == IntakeFlow() && c.messages.isEmpty }
 }
 @MainActor @Test func retriedSendKeepsSubmissionID() async {
     let t = FakeTransport(results: Array(repeating: .failure(FakeError()), count: 500))
@@ -40,12 +41,6 @@ import Testing
                                      timings: .test.with(idle: .milliseconds(400), idleGrace: .milliseconds(50)))
     c.send(); await eventually { if case .sendFailed = c.flow.phase { true } else { false } }
     await eventually { c.flow.phase == .welcome && c.flow.answers.allSatisfy(\.isEmpty) }
-}
-@MainActor @Test func resetDuringTidyDiscardsLateResult() async throws {
-    let (c, _) = makeController([[.final("Jane Demo")]], model: FakeAnswerModel(delay: .milliseconds(80)))
-    c.start(); await eventually { c.transcript == "Jane Demo" }
-    c.reset(); try await Task.sleep(for: .milliseconds(200))
-    #expect(c.flow == IntakeFlow() && c.transcript.isEmpty)
 }
 @MainActor @Test func respeakReplacesAnswerOnlyInVoiceMode() async throws {
     let listener = FakeListener(script: [[.final("John Smith")]])

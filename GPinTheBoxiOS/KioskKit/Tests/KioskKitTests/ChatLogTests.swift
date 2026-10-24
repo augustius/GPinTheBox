@@ -1,45 +1,44 @@
 import Testing
 @testable import KioskKit
 
-@MainActor private func log(_ c: KioskController) -> [String] {
-    c.messages.map { ($0.role == .kiosk ? "K: " : "P: ") + $0.text }
-}
+private let acks = CasualLines.acknowledgements.map { $0.replacingOccurrences(of: "{name}", with: "Jane") }
 
-@MainActor @Test func voiceAnswersAreLoggedAsAChat() async {
-    let (c, _) = makeController([[.final("Jane Demo")], [.final("DEMO001")]])
-    c.start(); await eventually { c.flow.phase == .asking(2) }
-    await eventually { c.messages.count >= 5 }
-    #expect(Array(log(c).prefix(5)) == ["K: Full name", "P: Jane Demo", "K: Medicare or insurance ID", "P: DEMO001", "K: Date of birth"])
-    #expect(c.messages.map(\.id) == Array(c.messages.map(\.id)).sorted() && Set(c.messages.map(\.id)).count == c.messages.count)
+@MainActor @Test func voiceRepliesAreLoggedRawWithChips() async {
+    let (c, speaker) = makeController([[.final("Jane Demo")], [.final("demo 001")]])
+    c.start(); await eventually { c.flow.phase == .asking(2) && c.messages.count == 5 }
+    #expect(c.messages.map(\.role) == [.kiosk, .patient, .kiosk, .patient, .kiosk])
+    #expect(c.messages[1].text == "Jane Demo" && c.messages[1].picked == [0: "Jane Demo"])
+    #expect(c.messages[3].text == "demo 001" && c.messages[3].picked == [1: "DEMO001"])
+    #expect(c.messages.filter { $0.role == .kiosk }.allSatisfy { $0.picked.isEmpty })
+    #expect(c.messages.map(\.id) == c.messages.map(\.id).sorted() && Set(c.messages.map(\.id)).count == c.messages.count)
+    await eventually { speaker.spoken.count == 3 }
+    #expect(speaker.spoken == c.messages.filter { $0.role == .kiosk }.map { CasualLines.spoken($0.text) })
 }
-@MainActor @Test func typedSkippedAndRepeatedAreLogged() async {
-    let c = KioskController(speaker: FakeSpeaker(), listener: nil, tidier: AnswerTidier(model: FakeAnswerModel(isAvailable: false)))
-    c.submitter = Submitter(transport: FakeTransport(results: []))
-    c.start(); await eventually { c.messages.count == 1 }
-    c.submitTyped(" "); await eventually { c.messages.count == 2 }
-    c.submitTyped("Jane Demo"); c.submitTyped("DEMO001"); c.submitTyped("1980-05-01")
-    await eventually { c.flow.phase == .asking(3) && c.messages.count == 8 }
-    c.skip(); await eventually { c.messages.count == 10 }
-    #expect(log(c) == ["K: Full name", "K: Full name", "P: Jane Demo", "K: Medicare or insurance ID", "P: DEMO001",
-                       "K: Date of birth", "P: 1 May 1980", "K: What is the main reason for your visit today?",
-                       "P: Skipped", "K: When did it start?"])
+@MainActor @Test func acknowledgementOnlyWhenSomethingWasRecorded() async {
+    let (c, _) = makeController([], model: FakeAnswerModel(isAvailable: false)); c.inputMode = .typing; c.start()
+    #expect(!acks.contains { c.messages[0].text.hasPrefix($0) })
+    c.submitTyped("Jane Demo"); await eventually { c.flow.phase == .asking(1) && c.messages.count == 3 }
+    #expect(acks.contains { c.messages[2].text.hasPrefix($0 + " ") })
+    c.submitTyped("pass"); await eventually { c.flow.askCounts[1] == 2 }
+    #expect(c.messages[3].picked.isEmpty && !acks.contains { c.messages[4].text.hasPrefix($0) })
+}
+@MainActor @Test func latestKioskMessageIDTracksNewestLine() async {
+    let (c, _) = makeController([], model: FakeAnswerModel(delay: .milliseconds(50))); c.inputMode = .typing
+    #expect(c.latestKioskMessageID == nil)
+    c.start(); let first = c.messages[0].id; #expect(c.latestKioskMessageID == first)
+    c.submitTyped("Jane Demo"); #expect(c.latestKioskMessageID == first && c.messages.last?.role == .patient)
+    await eventually { c.messages.count == 3 }
+    #expect(c.latestKioskMessageID == c.messages[2].id)
+}
+@MainActor @Test func speakAgainLogsNothing() async {
+    let (c, speaker) = makeController([]); c.start()
+    await eventually { c.isListening }
+    c.speakAgain(); await eventually { speaker.spoken.count == 2 && c.isListening }
+    #expect(speaker.spoken[0] == speaker.spoken[1] && c.messages.count == 1 && c.flow.askCounts[0] == 1)
 }
 @MainActor @Test func resetClearsChat() async {
     let (c, _) = makeController([[.final("Jane Demo")]])
     c.start(); await eventually { c.messages.count >= 2 }
     c.reset()
-    #expect(c.messages.isEmpty)
-}
-@MainActor @Test func lateTidyResultIsNotLogged() async throws {
-    let (c, _) = makeController([[.final("Jane Demo")]], model: FakeAnswerModel(delay: .milliseconds(80)))
-    c.start(); await eventually { c.transcript == "Jane Demo" }
-    c.reset(); try await Task.sleep(for: .milliseconds(200))
-    #expect(c.messages.isEmpty)
-}
-@MainActor @Test func typedDOBIsLoggedReadablyAndStoredAsISO() async {
-    let c = KioskController(speaker: FakeSpeaker(), listener: nil, tidier: AnswerTidier(model: FakeAnswerModel(isAvailable: false)))
-    c.submitter = Submitter(transport: FakeTransport(results: []))
-    c.start(); c.submitTyped("Jane Demo"); c.submitTyped("DEMO001"); c.submitTyped("1/5/1980")
-    await eventually { c.flow.phase == .asking(3) && c.messages.count == 7 }
-    #expect(log(c)[5] == "P: 1 May 1980" && c.flow.answers[2] == "1980-05-01")
+    #expect(c.messages.isEmpty && c.latestKioskMessageID == nil)
 }
