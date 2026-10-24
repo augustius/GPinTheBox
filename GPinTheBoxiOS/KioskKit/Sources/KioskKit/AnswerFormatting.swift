@@ -1,7 +1,10 @@
 import Foundation
+import KioskProtocol
 
 public enum AnswerFormatting {
+    /// "1 May 1980" for a stored, valid, past `yyyy-MM-dd` date; nil otherwise, so callers show the raw text.
     public static func readableDOB(_ iso: String) -> String? {
+        guard KioskDate.isValidPastDOB(iso) else { return nil }
         let parser = DateFormatter(); parser.locale = Locale(identifier: "en_US_POSIX")
         parser.timeZone = TimeZone(secondsFromGMT: 0); parser.dateFormat = "yyyy-MM-dd"; parser.isLenient = false
         guard let date = parser.date(from: iso) else { return nil }
@@ -13,10 +16,11 @@ public enum AnswerFormatting {
     /// Day-first (en-AU) parse of a typed or spoken date into `yyyy-MM-dd`; 4-digit years and real dates only.
     public static func isoDOB(from raw: String) -> String? {
         let s = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            .replacing(#/[.,]+$/#, with: "")
             .replacing(#/(\d{1,2})(?:st|nd|rd|th)\b/#) { String($0.1) }
             .replacing(#/\s+/#, with: " ").replacing(" of ", with: " ")
         let ymd: (Int, Int, Int)?
-        if let r = s.wholeMatch(of: #/(\d{4})-(\d{2})-(\d{2})/#) { ymd = (Int(r.1)!, Int(r.2)!, Int(r.3)!) }
+        if let r = s.wholeMatch(of: #/(\d{4})-(\d{1,2})-(\d{1,2})/#) { ymd = (Int(r.1)!, Int(r.2)!, Int(r.3)!) }
         else if let r = s.wholeMatch(of: #/(\d{1,2})([\/.\- ])(\d{1,2})([\/.\- ])(\d{4})/#), r.2 == r.4 {
             ymd = (Int(r.5)!, Int(r.3)!, Int(r.1)!)
         } else if let r = s.wholeMatch(of: #/(\d{1,2}) ([a-z]+)\.?,? (\d{4})/#), let m = month(r.2) { ymd = (Int(r.3)!, m, Int(r.1)!) }
