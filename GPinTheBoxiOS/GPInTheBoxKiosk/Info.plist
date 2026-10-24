@@ -2,12 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>The kiosk listens to your spoken answers to the intake questions.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Your answers are transcribed on this device.</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>The kiosk sends your answers to the clinic's Mac on this network.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_steadycare._tcp</string>

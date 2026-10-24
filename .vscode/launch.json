@@ -1,0 +1,24 @@
+{
+  "configurations": [
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:GPinTheBox}/Packages/GPInTheBoxKit",
+      "name": "Debug ModelProbe (Packages/GPInTheBoxKit)",
+      "target": "ModelProbe",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug ModelProbe (Packages/GPInTheBoxKit)"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:GPinTheBox}/Packages/GPInTheBoxKit",
+      "name": "Release ModelProbe (Packages/GPInTheBoxKit)",
+      "target": "ModelProbe",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release ModelProbe (Packages/GPInTheBoxKit)"
+    }
+  ]
+}
