@@ -37,9 +37,10 @@ import Testing
     #expect(CasualLines.spoken("Hey! 👋 Thanks for coming in.") == "Hey! Thanks for coming in.")
     #expect(KioskQuestions.all.map(ChipLabel.text(for:)) == ["Name", "ID", "Born", "Reason", "Started", "Symptoms", "Medications", "Allergies", "Conditions", "Other"])
 }
-@Test func acknowledgementsAreNeutral() {
-    let deny = ["should", "recommend", "don't worry", "it's probably", "normal", "diagnos", "nothing serious", "no worries", "lovely", "perfect", "great"]
-    for line in CasualLines.acknowledgements {
+@Test func acknowledgementsAndReAsksAreNeutral() {
+    let deny = ["should", "recommend", "don't worry", "it's probably", "normal", "diagnos", "nothing serious", "no worries", "lovely", "perfect", "great",
+                "no stress", "don't stress"]
+    for line in CasualLines.acknowledgements + CasualLines.reAsk.flatMap({ $0 }) {
         for word in deny { #expect(!line.lowercased().contains(word), "\(line)") }
     }
 }

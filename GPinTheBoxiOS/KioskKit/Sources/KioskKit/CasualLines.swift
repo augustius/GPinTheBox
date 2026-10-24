@@ -79,16 +79,16 @@ public struct CasualLines: Sendable {
     ]
 
     static let reAsk: [[String]] = [
-        ["No worries, I just need your full name to find your file. What is it?", "Sorry, could I get your full name again? It helps us match you up."],
-        ["No worries, I just need your Medicare or insurance ID to find your record. What is it?", "Could you give me your Medicare or insurance ID once more? It's how we check you in."],
-        ["No worries, I just need your date of birth to find your file. What is it?", "Sorry, {name}, could you give me your date of birth again? Any format is fine."],
-        ["Just so I've got it right, what's the main reason for your visit?", "No stress. In a few words, what brings you in today?"],
-        ["No worries, roughly when did it start? A rough guess is fine.", "Could you tell me again when it began? Days, weeks, whenever it was."],
-        ["No stress, what symptoms have you noticed? Just in your own words.", "Could you describe your symptoms once more, {name}? A few words is fine."],
+        ["Sorry, I still need your full name to find your file. What is it?", "Just checking, could I get your full name? It helps us match you up."],
+        ["Sorry, I still need your Medicare or insurance ID to find your record. What is it?", "One more time — what's your Medicare or insurance ID? It's how we check you in."],
+        ["Sorry, I still need your date of birth to find your file. What is it?", "Sorry, {name}, could you give me your date of birth again? Any format is fine."],
+        ["Just so I've got it right, what's the main reason for your visit?", "One more time — in a few words, what brings you in today?"],
+        ["Just checking, roughly when did it start? A rough guess is fine.", "Could you tell me again when it began? Days, weeks, whenever it was."],
+        ["One more time — what symptoms have you noticed? Just in your own words.", "Could you describe your symptoms once more, {name}? A few words is fine."],
         ["Just checking, are you taking any medications right now?", "Could you let me know about any medications again? Even just a name helps."],
         ["Just to be sure, do you have any allergies?", "Sorry, {name}, could you tell me about any allergies once more?"],
         ["Just checking, do you have any ongoing medical conditions?", "Could you let me know about any long-term conditions again?"],
-        ["Is there anything else you'd like the doctor to know? Totally fine if not.", "No worries, anything else to pass on to the doctor?"],
+        ["Is there anything else you'd like the doctor to know? Totally fine if not.", "One more time — anything else to pass on to the doctor?"],
     ]
 }
 
