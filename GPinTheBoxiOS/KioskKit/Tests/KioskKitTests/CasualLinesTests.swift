@@ -44,3 +44,15 @@ import Testing
         for word in deny { #expect(!line.lowercased().contains(word), "\(line)") }
     }
 }
+@Test func acknowledgedAskNeverRepeatsNameOrThanks() {
+    for seed in UInt64(0)..<200 {
+        var lines = CasualLines(seed: seed)
+        for q in KioskQuestions.all {
+            for attempt in 0...1 {
+                let line = lines.ask(q, attempt: attempt, name: "Jane", opening: false, acknowledging: true).lowercased()
+                #expect(line.components(separatedBy: "jane").count <= 2, "\(line)")
+                #expect(line.components(separatedBy: "thanks").count + line.components(separatedBy: "cheers").count <= 3, "\(line)")
+            }
+        }
+    }
+}

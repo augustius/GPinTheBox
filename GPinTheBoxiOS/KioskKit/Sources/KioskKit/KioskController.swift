@@ -310,8 +310,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
         switch flow.phase {
         case .asking(let n):
             if typingAt != nil { typingAt = n }   // a draft started meanwhile is for the new line
-            let ask = lines.ask(flow.questions[n], attempt: flow.askCounts[n], name: name, opening: false)
-            post(acknowledging ? lines.acknowledgement(name: name) + " " + ask : ask)
+            post(lines.ask(flow.questions[n], attempt: flow.askCounts[n], name: name, opening: false, acknowledging: acknowledging))
         case .cantProceed(let i):
             let line = CasualLines.cantProceed(flow.questions[i])
             say(.kiosk, line); runTurn(speaking: line)

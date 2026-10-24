@@ -18,11 +18,14 @@ public struct CasualLines: Sendable {
 
     public init(seed: UInt64) { rng = SplitMix64(state: seed) }
 
-    public mutating func ask(_ q: KioskQuestion, attempt: Int, name: String?, opening: Bool) -> String {
+    public mutating func ask(_ q: KioskQuestion, attempt: Int, name: String?, opening: Bool, acknowledging: Bool = false) -> String {
         let bank = attempt == 0 ? Self.firstAsk : Self.reAsk
         let key = q.id * 2 + (attempt == 0 ? 0 : 1)
-        let line = Self.pick(bank[q.id], name: name, rng: &rng, last: &lastUsed[key])
-        return (opening ? Self.openingPrefix : "") + line
+        let ack = acknowledging ? acknowledgement(name: name) + " " : ""
+        // After an acknowledgement, skip variants that would thank or name the patient a second time.
+        let plain = bank[q.id].filter { !$0.contains("{name}") && !$0.hasPrefix("Thanks") && !$0.hasPrefix("Cheers") }
+        let line = Self.pick(acknowledging && !plain.isEmpty ? plain : bank[q.id], name: name, rng: &rng, last: &lastUsed[key])
+        return (opening ? Self.openingPrefix : "") + ack + line
     }
 
     public mutating func acknowledgement(name: String?) -> String {
