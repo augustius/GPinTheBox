@@ -59,3 +59,22 @@ import Testing
     await eventually { c.flow.phase == .asking(3) && c.messages.count == 7 }
     #expect(log(c)[5] == "P: 1 May 1980" && c.flow.answers[2] == "1980-05-01")
 }
+@MainActor @Test func resetMidSessionLeavesNextSessionClean() async throws {
+    // Reset while the mic is open.
+    let (listening, _) = makeController([])
+    listening.start(); await eventually { listening.isListening }
+    listening.reset(); listening.start()
+    await eventually { listening.isListening }
+    try await Task.sleep(for: .milliseconds(150))
+    #expect(log(listening) == ["K: Full name"] && listening.flow.answers.allSatisfy(\.isEmpty) && listening.transcript.isEmpty)
+    // Reset while the read-back is being spoken.
+    let speaker = FakeSpeaker(delay: .milliseconds(100))
+    let c = KioskController(speaker: speaker, listener: FakeListener(script: [[.final("Jane Demo, my ID is DEMO001")]]),
+                            tidier: AnswerTidier(model: FakeAnswerModel(prefill: [1: "DEMO001"]), timeout: .milliseconds(100)), timings: .test)
+    c.submitter = Submitter(transport: FakeTransport(results: []))
+    c.start(); await eventually { speaker.spoken.last?.hasPrefix("You mentioned") == true }
+    c.reset(); c.start()
+    try await Task.sleep(for: .milliseconds(250))
+    #expect(log(c) == ["K: Full name"] && c.flow.phase == .asking(0))
+    #expect(c.flow.answers.allSatisfy(\.isEmpty) && c.flow.candidates.isEmpty && c.transcript.isEmpty)
+}
