@@ -200,7 +200,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
         while isLive(gen), entry != .wait, let i = flow.currentIndex {
             if entry == .ask {
                 let confirming = flow.phase == .confirmingCandidate(i)
-                await speaker.speak(confirming ? IntakeFlow.readback(flow.candidates[i] ?? "") : flow.questions[i].text)
+                await speaker.speak(confirming ? readback(i) : flow.questions[i].text)
                 guard isLive(gen), !confirming, inputMode == .voice else { return }
             }
             if entry == .prefill {
@@ -228,10 +228,17 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     private func showPrompt(force: Bool = false) {
         guard let i = flow.currentIndex, force || promptedPhase != flow.phase else { return }
         promptedPhase = flow.phase
-        say(.kiosk, flow.phase == .confirmingCandidate(i) ? IntakeFlow.readback(flow.candidates[i] ?? "") : flow.questions[i].text)
+        say(.kiosk, flow.phase == .confirmingCandidate(i) ? readback(i) : flow.questions[i].text)
     }
 
-    private func record(_ i: Int) { say(.patient, flow.answers[i].isEmpty ? "Skipped" : flow.answers[i]) }
+    /// The candidate read back for question `i`; a date of birth is read as "1 May 1980", never as the stored ISO text.
+    private func readback(_ i: Int) -> String { IntakeFlow.readback(readable(flow.candidates[i] ?? "", for: i)) }
+
+    private func readable(_ value: String, for i: Int) -> String {
+        flow.questions[i].kind == .dateOfBirth ? AnswerFormatting.readableDOB(value) ?? value : value
+    }
+
+    private func record(_ i: Int) { say(.patient, flow.answers[i].isEmpty ? "Skipped" : readable(flow.answers[i], for: i)) }
 
     private func say(_ role: ChatMessage.Role, _ text: String) {
         nextMessageID += 1; messages.append(ChatMessage(id: nextMessageID, role: role, text: text))
