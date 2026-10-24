@@ -42,6 +42,7 @@ public struct IntakeFlow: Equatable, Sendable {
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { candidates[i] = trimmed }
         }
+        if case .asking(let i) = phase, candidates[i] != nil { phase = .confirmingCandidate(i) }
     }
 
     public mutating func confirmCandidate() {

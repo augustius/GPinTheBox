@@ -50,3 +50,10 @@ func answeredFlow() -> IntakeFlow {
     #expect(AnswerFormatting.readableDOB("garbage") == nil)
     #expect(AnswerFormatting.normaliseIdentifier(" demo-00 1/ ") == "DEMO001")
 }
+@Test func candidateForCurrentQuestionSwitchesToConfirming() {
+    var f = IntakeFlow(); f.start(); f.answer("Jane Demo")
+    f.addCandidates([1: "DEMO001"])
+    #expect(f.phase == .confirmingCandidate(1))
+    f.confirmCandidate()
+    #expect(f.answers[1] == "DEMO001" && f.phase == .asking(2))
+}
