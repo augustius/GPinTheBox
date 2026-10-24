@@ -9,9 +9,11 @@
 /* Begin PBXBuildFile section */
 		0000000000000000000000C8 /* KioskApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000064 /* KioskApp.swift */; };
 		0000000000000000000000C9 /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000065 /* WelcomeView.swift */; };
-		0000000000000000000000CA /* QuestionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000066 /* QuestionView.swift */; };
+		0000000000000000000000CA /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000066 /* ChatView.swift */; };
 		0000000000000000000000CB /* ReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000067 /* ReviewView.swift */; };
 		0000000000000000000000CC /* StaffSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000068 /* StaffSetupView.swift */; };
+		0000000000000000000000CD /* AnswerEditSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000006A /* AnswerEditSheet.swift */; };
+		0000000000000000000000CE /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000006B /* Theme.swift */; };
 		000000000000000000000190 /* KioskKit in Frameworks */ = {isa = PBXBuildFile; productRef = 00000000000000000000012C /* KioskKit */; };
 /* End PBXBuildFile section */
 
@@ -19,9 +21,11 @@
 		000000000000000000000004 /* GPInTheBoxKiosk.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = GPInTheBoxKiosk.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		000000000000000000000064 /* KioskApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KioskApp.swift; sourceTree = "<group>"; };
 		000000000000000000000065 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
-		000000000000000000000066 /* QuestionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuestionView.swift; sourceTree = "<group>"; };
+		000000000000000000000066 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		000000000000000000000067 /* ReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewView.swift; sourceTree = "<group>"; };
 		000000000000000000000068 /* StaffSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StaffSetupView.swift; sourceTree = "<group>"; };
+		00000000000000000000006A /* AnswerEditSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnswerEditSheet.swift; sourceTree = "<group>"; };
+		00000000000000000000006B /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		000000000000000000000069 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -58,9 +62,11 @@
 			children = (
 				000000000000000000000064 /* KioskApp.swift */,
 				000000000000000000000065 /* WelcomeView.swift */,
-				000000000000000000000066 /* QuestionView.swift */,
+				000000000000000000000066 /* ChatView.swift */,
 				000000000000000000000067 /* ReviewView.swift */,
 				000000000000000000000068 /* StaffSetupView.swift */,
+				00000000000000000000006A /* AnswerEditSheet.swift */,
+				00000000000000000000006B /* Theme.swift */,
 				000000000000000000000069 /* Info.plist */,
 			);
 			path = GPInTheBoxKiosk;
@@ -135,9 +141,11 @@
 			files = (
 				0000000000000000000000C8 /* KioskApp.swift in Sources */,
 				0000000000000000000000C9 /* WelcomeView.swift in Sources */,
-				0000000000000000000000CA /* QuestionView.swift in Sources */,
+				0000000000000000000000CA /* ChatView.swift in Sources */,
 				0000000000000000000000CB /* ReviewView.swift in Sources */,
 				0000000000000000000000CC /* StaffSetupView.swift in Sources */,
+				0000000000000000000000CD /* AnswerEditSheet.swift in Sources */,
+				0000000000000000000000CE /* Theme.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

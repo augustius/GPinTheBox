@@ -144,9 +144,15 @@ Then turn on Guided Access (Settings → Accessibility) to lock the device to th
 
 ### Patient flow
 
-The ten questions are spoken aloud in an en-AU voice and shown as a chat. For each one the patient can speak or type. Live captions show what is heard, and silence or **Done** ends a spoken answer. **Repeat question** replays it, and **Skip** is available for questions 4 to 10.
+The kiosk runs the ten questions as a casual chat on a dark, ChatGPT-style screen. Its lines are spoken in an en-AU voice and shown as plain text; under the latest one, 🔊 reads it again and ↻ asks it another way. The patient answers in their own words by voice or by typing in the composer at the bottom; live captions show what is heard, and silence or **Done** ends a spoken reply. The header shows progress as `3 of 10`.
 
-Answers are tidied on the device by Apple's Foundation Models; if the model is unavailable, the raw transcript is used. The model may pre-fill later answers from an earlier one, and these are always read back for confirmation. A mandatory review screen comes before **Send to clinic**, which retries for up to 30 seconds. After a successful send the kiosk shows "Thanks, please take a seat." and resets after about 5 seconds. After 2 minutes idle it asks "Are you still there?" and resets 20 seconds later. The kiosk keeps nothing except the chosen Mac's name.
+Each reply is mapped on the device by Apple's Foundation Models to any of the ten questions it answers, so "I'm Jane Demo, cough since Monday" can fill the name, reason and start at once. What was picked up appears as chips under the patient's message (for example `Name: Jane Demo ✎`); tapping a chip edits that answer. "No", "none" or "pass" to an optional question records it as answered with nothing (`Allergies: none`). If the model is unavailable, the whole reply is tidied into the question being asked. The kiosk then asks, casually, for whatever is still missing.
+
+Voice is on for every patient. The blue button in the composer toggles quiet mode, which speaks nothing and leaves the mic off; the mic button dictates into the field without sending. Both are hidden if speech isn't available on the device.
+
+Name, Medicare or insurance ID and date of birth are asked at most 3 times, the other questions at most twice (then left empty). If a required answer is still missing after its third ask, the kiosk says it can't proceed and shows **Please see reception** with **Start over**; nothing is sent and the session is wiped after 10 seconds.
+
+A mandatory review screen comes before **Send to clinic**, which retries for up to 30 seconds. After a successful send the kiosk shows "Thanks, please take a seat." and resets after about 5 seconds. After 2 minutes idle it asks "Are you still there?" and resets 20 seconds later. The kiosk keeps nothing except the chosen Mac's name.
 
 ### Tests
 
@@ -172,7 +178,10 @@ Out of scope for v1: other languages, patients' own phones, reading the Mac's qu
 Not yet run on a real iPad. Tick each item and fill in the result.
 
 - [ ] First launch: Local Network and microphone prompts appear on the kiosk, and the Local Network prompt appears on the Mac.
-- [ ] Speak the synthetic Jane Demo script ("Jane Demo", "D E M O zero zero one", "first of May nineteen eighty", "I've had a cough since Monday"). The ID is tidied to `DEMO001`, the date of birth shows as `1 May 1980`, and "When did it start?" is read back as a pre-fill.
+- [ ] Voice conversation end to end: say "I'm Jane Demo, cough since Monday", then answer each follow-up by voice ("D E M O zero zero one", "first of May nineteen eighty", "no" to allergies). Chips appear under each reply, the ID is tidied to `DEMO001`, the date of birth shows as `1 May 1980`, and the visit arrives on the Mac.
+- [ ] Quiet toggle: the blue button switches to quiet mode (nothing spoken, mic off) and back; the next patient starts in voice mode.
+- [ ] Dictation button: in quiet mode, the mic button fills the field with what was said and doesn't send it.
+- [ ] 🔊 replays the latest line (also in quiet mode) and ↻ asks it another way; ↻ greys out once the question's tries are used up.
 - [ ] Turn off Wi-Fi during **Send to clinic**. After about 30 seconds, `Couldn't reach the clinic — ask reception` appears. Turn Wi-Fi back on and tap **Try again**: exactly one new patient appears on the Mac.
 - [ ] With two Macs advertising the service, the staff picker appears and the choice is remembered across relaunch.
 - [ ] Leave the kiosk idle for 2 minutes mid-question: "Are you still there?" appears, then 20 seconds later the kiosk is back at Welcome with nothing left on screen.

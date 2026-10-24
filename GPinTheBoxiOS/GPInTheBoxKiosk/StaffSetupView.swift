@@ -16,7 +16,7 @@ struct StaffSetupView: View {
                         Text("Automatic").tag("")
                         ForEach(kiosk.browser.services.keys.sorted(), id: \.self) { Text($0).tag($0) }
                     }
-                    if kiosk.browser.services.isEmpty { Text("Searching for clinic Macs…").foregroundStyle(.secondary) }
+                    if kiosk.browser.services.isEmpty { Text("Searching for clinic Macs…").foregroundStyle(Theme.secondary) }
                 }
                 Section("Speech") {
                     Text(readinessText)
@@ -33,9 +33,12 @@ struct StaffSetupView: View {
                     if let downloadError { Text(downloadError).foregroundStyle(.red) }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Theme.background)
             .navigationTitle("Staff setup")
             .toolbar { Button("Done") { dismiss() } }
         }
+        .tint(Theme.voiceBlue)
         .onChange(of: clinicName) { kiosk.applyClinic() }
     }
 

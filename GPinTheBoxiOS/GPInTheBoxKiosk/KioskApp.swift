@@ -67,24 +67,40 @@ struct RootView: View {
     let kiosk: Kiosk
 
     var body: some View {
-        if let controller = kiosk.controller {
-            screen(controller)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(ActivityTracker { [weak kiosk] in kiosk?.controller?.noteActivity() })
-                // Review presents its own alert, so it can show over the edit sheet instead.
-                .stillThereAlert(controller, enabled: controller.flow.phase != .review)
-                .onChange(of: controller.flow.phase == .welcome) { kiosk.applyClinic() }
-        } else {
-            ProgressView("Getting ready…")
+        Group {
+            if let controller = kiosk.controller {
+                screen(controller)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(ActivityTracker { [weak kiosk] in kiosk?.controller?.noteActivity() })
+                    // Chat and review present their own alert, so it can show over their edit sheet instead.
+                    .stillThereAlert(controller, enabled: controller.flow.currentIndex == nil && controller.flow.phase != .review)
+                    .onChange(of: controller.flow.phase == .welcome) { kiosk.applyClinic() }
+            } else {
+                ProgressView("Getting ready…")
+            }
         }
+        .tint(Theme.voiceBlue)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.background.ignoresSafeArea())
+        .preferredColorScheme(.dark)
     }
 
     @ViewBuilder private func screen(_ controller: KioskController) -> some View {
         switch controller.flow.phase {
         case .welcome:
             WelcomeView(kiosk: kiosk, controller: controller)
-        case .asking(let i), .confirmingCandidate(let i):
-            QuestionView(controller: controller, index: i)
+        case .asking:
+            ChatView(controller: controller)
+        case .cantProceed:
+            VStack(spacing: 28) {
+                if let line = controller.messages.last(where: { $0.role == .kiosk })?.text {
+                    Text(line).font(.title3).foregroundStyle(Theme.secondary).multilineTextAlignment(.center)
+                }
+                Text("Please see reception").font(.largeTitle.bold()).multilineTextAlignment(.center)
+                Button { controller.reset() } label: { Text("Start over").font(.title2.bold()).frame(maxWidth: 400) }
+                    .buttonStyle(.borderedProminent).controlSize(.large)
+            }
+            .padding(32).frame(maxWidth: 720)
         case .review:
             ReviewView(controller: controller)
         case .sending:
