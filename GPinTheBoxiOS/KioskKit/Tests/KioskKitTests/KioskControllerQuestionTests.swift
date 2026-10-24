@@ -19,13 +19,6 @@ import Testing
     c.start(); await eventually { c.flow.phase == .asking(1) }
     #expect(speaker.spoken.prefix(2) == ["Full name", "Full name"])
 }
-@MainActor @Test func prefillIsReadBackAndConfirmed() async {
-    let (c, speaker) = makeController([[.final("Jane Demo, my ID is DEMO001")]], model: FakeAnswerModel(prefill: [1: "DEMO001"]))
-    c.start(); await eventually { c.flow.phase == .confirmingCandidate(1) }
-    #expect(speaker.spoken.last == "You mentioned DEMO001. Is that right, or would you like to add anything?")
-    c.confirmCandidate(); await eventually { c.flow.phase == .asking(2) }
-    #expect(c.flow.answers[1] == "DEMO001")
-}
 @MainActor @Test func skipAndRepeatAndTyping() async {
     let typing = KioskController(speaker: FakeSpeaker(), listener: nil, tidier: AnswerTidier(model: FakeAnswerModel(isAvailable: false)))
     typing.submitter = Submitter(transport: FakeTransport(results: []))
@@ -46,30 +39,6 @@ import Testing
     try await Task.sleep(for: .milliseconds(100))
     #expect(c.flow.phase == .asking(0) && c.flow.answers[0] == "" && !c.isListening)
     #expect(speaker.spoken == ["Full name"])
-}
-@MainActor func typingAtCandidate(_ listener: FakeListener? = nil) async -> KioskController {
-    let c = KioskController(speaker: FakeSpeaker(), listener: listener,
-                            tidier: AnswerTidier(model: FakeAnswerModel(prefill: [1: "DEMO001"])), timings: .test)
-    c.submitter = Submitter(transport: FakeTransport(results: []))
-    c.inputMode = .typing
-    c.start(); c.submitTyped("Jane Demo")
-    await eventually { c.flow.phase == .confirmingCandidate(1) }
-    return c
-}
-@MainActor @Test func typedAddAndReplaceCandidate() async {
-    let add = await typingAtCandidate()
-    add.addToCandidate(); add.submitTyped("extra")
-    #expect(add.flow.answers[1] == "DEMO001 extra" && add.flow.phase == .asking(2))
-    let replace = await typingAtCandidate()
-    replace.replaceCandidate(); replace.submitTyped("NEW1")
-    #expect(replace.flow.answers[1] == "NEW1" && replace.flow.phase == .asking(2))
-}
-@MainActor @Test func typingModeAddDoesNotOpenMic() async throws {
-    let listener = FakeListener(script: [])
-    let c = await typingAtCandidate(listener)
-    c.addToCandidate(); try await Task.sleep(for: .milliseconds(100))
-    c.replaceCandidate(); try await Task.sleep(for: .milliseconds(100))
-    #expect(listener.listens == 0 && !c.isListening)
 }
 @MainActor func voiceController(_ script: [[ListenEvent]]) -> (KioskController, FakeListener) {
     let listener = FakeListener(script: script)
@@ -96,17 +65,6 @@ import Testing
     c.beginTyping(); c.submitTyped("Jane Demo")
     await eventually { c.flow.phase == .asking(1) && c.isListening }
     #expect(listener.listens == 2 && c.inputMode == .voice)
-}
-@MainActor @Test func typingDuringVoiceAddMoreAppends() async {
-    let listener = FakeListener(script: [[.final("Jane Demo, my ID is DEMO001")]])
-    let c = KioskController(speaker: FakeSpeaker(), listener: listener,
-                            tidier: AnswerTidier(model: FakeAnswerModel(prefill: [1: "DEMO001"]), timeout: .milliseconds(100)), timings: .test)
-    c.submitter = Submitter(transport: FakeTransport(results: []))
-    c.start(); await eventually { c.flow.phase == .confirmingCandidate(1) }
-    c.addToCandidate(); await eventually { c.isListening }
-    c.beginTyping(); c.submitTyped("X")
-    await eventually { c.flow.phase == .asking(2) }
-    #expect(c.flow.answers[1] == "DEMO001 X")
 }
 @MainActor @Test func typingWhileQuestionIsSpokenKeepsMicClosed() async throws {
     let listener = FakeListener(script: [])

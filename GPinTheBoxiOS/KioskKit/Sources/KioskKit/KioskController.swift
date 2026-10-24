@@ -39,7 +39,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     }
 
     private static let unreachable = "Couldn't reach the clinic — ask reception"
-    private enum Entry { case ask, listen, append, prefill, wait }
+    private enum Entry { case ask, listen, wait }
     private let speaker: any QuestionSpeaker
     private let listener: (any AnswerListener)?
     private let tidier: AnswerTidier
@@ -49,8 +49,6 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     @ObservationIgnored private var doneTask: Task<Void, Never>?
     @ObservationIgnored private var wiping: Task<Void, Never>?
     private var generation = 0
-    private var appendsTyped = false
-    private var listeningAppends = false
     private var respeakGeneration: Int?
     /// The question the patient has started typing an answer to: the mic stays closed for it until they submit, repeat it or move on.
     private var typingAt: Int?
@@ -77,16 +75,15 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     public func repeatQuestion() { noteActivity(); typingAt = nil; if flow.currentIndex != nil { showPrompt(force: true); runSession(.ask) } }
     public func skip() {
         noteActivity()
-        guard let i = flow.currentIndex, flow.skip() else { return }
-        record(i); showPrompt(); runSession(.ask)
+        guard let i = flow.currentIndex, !flow.questions[i].isRequired else { return }
+        flow.markAnsweredEmpty(i); flow.advance(); record(i); showPrompt(); runSession(.ask)
     }
 
     public func submitTyped(_ text: String) {
         guard let i = flow.currentIndex else { return }
         noteActivity(); typingAt = nil
-        if appendsTyped, case .confirmingCandidate = flow.phase { flow.appendToCandidate(text) }
-        else if !flow.answer(text) { showPrompt(force: true); return runSession(.ask) }
-        record(i); showPrompt(); appendTranscript(text); runSession(.prefill)
+        if !answer(text, at: i) { showPrompt(force: true); return runSession(.ask) }
+        record(i); showPrompt(); appendTranscript(text); runSession(.ask) // Task 4: prefill dropped
     }
 
     /// The patient started typing: the mic stays closed for this question (even if it hasn't opened yet). If it was open,
@@ -97,21 +94,13 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
         guard isListening, let listener else { return }
         noteActivity()
         sessionTask?.cancel(); sessionTask = nil; generation += 1
-        isListening = false; caption = ""; appendsTyped = listeningAppends
+        isListening = false; caption = ""
         Task { await listener.stop() }
     }
 
-    public func confirmCandidate() {
-        guard case .confirmingCandidate(let i) = flow.phase else { return }
-        noteActivity(); flow.confirmCandidate(); record(i); showPrompt(); runSession(.ask)
-    }
-
-    public func addToCandidate() {
-        guard case .confirmingCandidate = flow.phase else { return }
-        noteActivity()
-        if inputMode == .typing { appendsTyped = true } else { runSession(.append) }
-    }
-    public func replaceCandidate() { if case .confirmingCandidate = flow.phase { noteActivity(); runSession(.listen) } }
+    public func confirmCandidate() {} // Task 4
+    public func addToCandidate() {} // Task 4
+    public func replaceCandidate() {} // Task 4
 
     /// Saves a typed review edit; a re-record still open for any answer is dropped first, so late speech can't overwrite it.
     public func edit(_ index: Int, to text: String) { noteActivity(); cancelRespeak(); flow.edit(index, to: text) }
@@ -184,7 +173,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
             await previous?.value; await speaker.stop(); await listener?.stop(); await tidier.reset()
         }
         flow = IntakeFlow(); caption = ""; transcript = ""; lastError = nil; submissionID = nil
-        isListening = false; isAskingStillThere = false; appendsTyped = false; typingAt = nil
+        isListening = false; isAskingStillThere = false; typingAt = nil
         messages = []; promptedPhase = nil
         inputMode = listener == nil ? .typing : .voice
     }
@@ -202,7 +191,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     /// Replaces the running session task; the body must check `isLive(gen)` after every await before writing state.
     private func startSession(_ body: @escaping @MainActor (Int) async -> Void) {
         let interrupting = sessionTask != nil
-        sessionTask?.cancel(); generation += 1; isListening = false; appendsTyped = false
+        sessionTask?.cancel(); generation += 1; isListening = false
         let gen = generation, wiping = wiping
         sessionTask = Task {
             await wiping?.value
@@ -216,41 +205,37 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
         var entry = first
         while isLive(gen), entry != .wait, let i = flow.currentIndex {
             if entry == .ask {
-                let confirming = flow.phase == .confirmingCandidate(i)
-                await speaker.speak(confirming ? readback(i) : flow.questions[i].text)
-                guard isLive(gen), !confirming, inputMode == .voice else { return }
-            }
-            if entry == .prefill {
-                let found = await prefill(from: i)
-                guard isLive(gen) else { return }
-                flow.addCandidates(found); showPrompt(); entry = .ask; continue
+                await speaker.speak(flow.questions[i].text)
+                guard isLive(gen), inputMode == .voice else { return }
             }
             guard inputMode == .voice else { return }
-            if typingAt == i { appendsTyped = entry == .append; return }
-            listeningAppends = entry == .append
+            if typingAt == i { return }
             let heard: String
             do { guard let h = try await listen(gen) else { return }; heard = h }
-            catch { inputMode = .typing; appendsTyped = entry == .append; return }
+            catch { inputMode = .typing; return }
             appendTranscript(heard)
             let text = heard.isEmpty ? "" : await tidier.tidy(heard, for: flow.questions[i])
-            // Prefill runs before the answer lands, so the phase change and the next question are back to back.
-            let found = text.isEmpty && entry != .append ? [:] : await prefill(from: i + 1)
             guard isLive(gen) else { return }
-            if entry == .append { flow.appendToCandidate(text) }
-            else if !flow.answer(text) { showPrompt(force: true); entry = .ask; continue }
-            record(i); flow.addCandidates(found); showPrompt(); entry = .ask
+            if !answer(text, at: i) { showPrompt(force: true); entry = .ask; continue } // Task 4: prefill dropped
+            record(i); showPrompt(); entry = .ask
         }
     }
 
-    /// Logs the current question, or the readback when confirming, once per phase (again when `force`d by a re-ask).
+    /// Logs the current question once per phase (again when `force`d by a re-ask).
     private func showPrompt(force: Bool = false) {
         guard let i = flow.currentIndex, force || promptedPhase != flow.phase else { return }
         promptedPhase = flow.phase
-        say(.kiosk, flow.phase == .confirmingCandidate(i) ? readback(i) : flow.questions[i].text)
+        say(.kiosk, flow.questions[i].text)
     }
 
-    /// The candidate read back for question `i`; a date of birth is read as "1 May 1980", never as the stored ISO text.
-    private func readback(_ i: Int) -> String { IntakeFlow.readback(readable(flow.candidates[i] ?? "", for: i)) }
+    /// Task 4: stand-in for the removed one-at-a-time `IntakeFlow.answer`.
+    private func answer(_ text: String, at i: Int) -> Bool {
+        if flow.record([i: text]).isEmpty {
+            guard !flow.questions[i].isRequired else { return false }
+            flow.markAnsweredEmpty(i)
+        }
+        flow.advance(); return true
+    }
 
     private func readable(_ value: String, for i: Int) -> String {
         flow.questions[i].kind == .dateOfBirth ? AnswerFormatting.readableDOB(value) ?? value : value
@@ -260,11 +245,6 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
 
     private func say(_ role: ChatMessage.Role, _ text: String) {
         nextMessageID += 1; messages.append(ChatMessage(id: nextMessageID, role: role, text: text))
-    }
-
-    private func prefill(from index: Int) async -> [Int: String] {
-        let remaining = flow.questions.filter { $0.id >= index && flow.answers[$0.id].isEmpty }
-        return remaining.isEmpty ? [:] : await tidier.prefill(transcript: transcript, remaining: remaining)
     }
 
     /// Listens until the stream ends; returns the last finalized text, or nil if the session moved on. Throws if listening failed.

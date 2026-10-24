@@ -4,8 +4,9 @@ import Foundation
 
 func answeredFlow() -> IntakeFlow {
     var f = IntakeFlow(); f.start()
-    f.answer("Jane Demo"); f.answer("DEMO001"); f.answer("1980-05-01")
-    for _ in 3..<10 { f.skip() }
+    f.record([0: "Jane Demo", 1: "DEMO001", 2: "1980-05-01"])
+    for i in 3..<10 { f.markAnsweredEmpty(i) }
+    f.advance()
     return f
 }
 @Test func walksQuestionsToReview() {
@@ -15,22 +16,37 @@ func answeredFlow() -> IntakeFlow {
     #expect(r.answers.map(\.q) == KioskQuestions.all.map(\.text))
     #expect(r.answers.map(\.a) == ["Jane Demo", "DEMO001", "1980-05-01"] + Array(repeating: "", count: 7))
 }
-@Test func requiredAnswerCannotBeEmpty() {
-    var f = IntakeFlow(); f.start()
-    #expect(!f.answer("  ") && !f.skip() && f.phase == .asking(0))
+@Test func targetsRequiredFirstThenOptionalInOrder() {
+    var f = IntakeFlow(); f.start(); #expect(f.phase == .asking(0))
+    f.record([3: "Cough", 0: "Jane Demo"]); f.advance(); #expect(f.phase == .asking(1))
+    f.record([1: "DEMO001", 2: "1/5/1980"]); f.advance(); #expect(f.phase == .asking(4))
+    #expect(f.answers[2] == "1980-05-01" && f.answeredCount == 4)
 }
-@Test func candidatesOnlyForLaterUnansweredQuestions() {
-    var f = IntakeFlow(); f.start(); f.answer("Jane Demo")
-    f.addCandidates([0: "Other", 1: "DEMO001", 4: "  ", 5: "Cough and fever"])
-    #expect(f.candidates == [1: "DEMO001", 5: "Cough and fever"])
+@Test func recordNeverOverwritesAnswered() {
+    var f = IntakeFlow(); f.start(); f.record([0: "Jane Demo"])
+    #expect(f.record([0: "Jon", 3: "  "]) == [:]); #expect(f.answers[0] == "Jane Demo")
 }
-@Test func candidateConfirmAppendAndReplace() {
-    var f = IntakeFlow(); f.start(); f.addCandidates([1: "DEMO001", 2: "1980-05-01", 3: "Cough"])
-    f.answer("Jane Demo"); #expect(f.phase == .confirmingCandidate(1))
-    f.confirmCandidate(); #expect(f.answers[1] == "DEMO001" && f.phase == .confirmingCandidate(2))
-    f.answer("1981-06-02"); #expect(f.answers[2] == "1981-06-02")
-    f.appendToCandidate("since Monday"); #expect(f.answers[3] == "Cough since Monday" && f.phase == .asking(4))
-    #expect(IntakeFlow.readback("Cough") == "You mentioned Cough. Is that right, or would you like to add anything?")
+@Test func optionalAskedTwiceThenSkipped() {
+    var f = IntakeFlow(); f.start(); f.record([0: "Jane", 1: "D1", 2: "1980-05-01"]); f.advance()
+    #expect(f.phase == .asking(3)); f.noteAsked(); f.advance(); #expect(f.phase == .asking(3))
+    f.noteAsked(); f.advance(); #expect(f.phase == .asking(4)); #expect(f.isAnsweredEmpty(3))
+}
+@Test func requiredUnansweredAfterThreeAsksCantProceed() {
+    var f = IntakeFlow(); f.start(); f.record([0: "Jane"]); f.advance()
+    for _ in 0..<2 { f.noteAsked(); f.advance(); #expect(f.phase == .asking(1)) }
+    f.noteAsked(); f.advance(); #expect(f.phase == .cantProceed(1))
+}
+@Test func clearingRequiredResetsAskCount() {
+    var f = IntakeFlow(); f.start(); f.noteAsked(); f.record([0: "Jane", 1: "D1"]); f.advance()
+    f.edit(0, to: " "); #expect(!f.isAnswered(0) && f.askCounts[0] == 0)
+    f.edit(3, to: ""); #expect(f.isAnsweredEmpty(3))
+    f.advance(); #expect(f.phase == .asking(0))
+}
+@Test func answeredEmptySendsEmptyString() {
+    var f = IntakeFlow(); f.start(); f.record([0: "Jane", 1: "D1", 2: "1980-05-01"])
+    f.markAnsweredEmpty(7); f.markAnsweredEmpty(0)
+    #expect(f.isAnsweredEmpty(7) && !f.isAnsweredEmpty(0))
+    #expect(f.request(submissionID: UUID()).answers[7].a == "")
 }
 @Test func canSendNeedsValidPastDOB() {
     var f = answeredFlow()
@@ -49,30 +65,16 @@ func answeredFlow() -> IntakeFlow {
     #expect(AnswerFormatting.readableDOB("garbage") == nil)
     #expect(AnswerFormatting.normaliseIdentifier(" demo-00 1/ ") == "DEMO001")
 }
-@Test func candidateForCurrentQuestionSwitchesToConfirming() {
-    var f = IntakeFlow(); f.start(); f.answer("Jane Demo")
-    f.addCandidates([1: "DEMO001"])
-    #expect(f.phase == .confirmingCandidate(1))
-    f.confirmCandidate()
-    #expect(f.answers[1] == "DEMO001" && f.phase == .asking(2))
-}
 @Test func typedDOBIsStoredAsISO() {
     var f = IntakeFlow(); f.start()
-    f.answer("Jane Demo"); f.answer("DEMO001"); f.answer(" 1/5/1980 ")
-    for _ in 3..<10 { f.skip() }
-    #expect(f.answers[2] == "1980-05-01" && f.canSend)
+    f.record([0: "Jane Demo", 1: "DEMO001", 2: " 1/5/1980 "])
+    for i in 3..<10 { f.markAnsweredEmpty(i) }
+    f.advance()
+    #expect(f.answers[2] == "1980-05-01" && f.canSend && f.phase == .review)
 }
 @Test func editedDOBNormalisesOrKeepsText() {
     var f = answeredFlow()
     f.edit(2, to: "1 May 1980"); #expect(f.answers[2] == "1980-05-01" && f.canSend)
     f.edit(2, to: " sometime in May "); #expect(f.answers[2] == "sometime in May" && !f.canSend)
     f.edit(0, to: "1/5/1980"); #expect(f.answers[0] == "1/5/1980")
-}
-@Test func confirmedOrAppendedDOBCandidateIsNormalised() {
-    var f = IntakeFlow(); f.start(); f.addCandidates([2: "1980-05-01"])
-    f.answer("Jane Demo"); f.answer("DEMO001"); f.confirmCandidate()
-    #expect(f.answers[2] == "1980-05-01")
-    var g = IntakeFlow(); g.start(); g.addCandidates([2: "1 May"])
-    g.answer("Jane Demo"); g.answer("DEMO001"); g.appendToCandidate("1980")
-    #expect(g.answers[2] == "1980-05-01" && g.phase == .asking(3))
 }
