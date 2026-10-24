@@ -54,6 +54,8 @@ public struct QuestionnaireSnapshot: Codable, Hashable, Sendable {
     public var gpNote: String
     public var noteUpdatedAt: Date?
     public var patient: Patient?
+    /// Set when a GP started the visit from the patient database without an intake; the database `patient_id`.
+    public var databasePatientID: String?
     public init(arrivedAt: Date, answers: [Answer]) {
         id = UUID(); self.arrivedAt = arrivedAt; self.answers = answers; statusRaw = "waiting"; gpNote = ""
     }

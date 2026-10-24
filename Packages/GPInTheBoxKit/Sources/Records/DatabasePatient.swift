@@ -127,6 +127,12 @@ import SwiftData
             || last_name.localizedCaseInsensitiveContains(term)
             || (!id.isEmpty && MedicareID.normalise(medicare_number).contains(id))
     }
+    /// Why a manual consult can't be started for this record, or nil when it can.
+    public var consultBlockReason: String? {
+        if MedicareID.normalise(medicare_number).isEmpty { return "No Medicare number on this record." }
+        if !IdentityValidation.validDOB(date_of_birth) { return "Date of birth isn't a valid date (yyyy-MM-dd)." }
+        return nil
+    }
     public func serializedJSON() throws -> String {
         var object = jsonObject
         object["consultation_notes"] = consultationNotes.sorted {

@@ -113,4 +113,24 @@ public enum RecordMutations {
         patient.fullName = name; patient.medicareID = key; patient.dateOfBirth = dob; patient.revision = UUID()
         do { try context.save() } catch { context.rollback(); throw error }
     }
+    /// Opens a consult for a database patient with no intake: reuses the intake patient matched by Medicare and DOB,
+    /// reopens their unfinished visit from today if there is one, or starts a new in-consult visit linked to the record.
+    public static func startManualConsult(context: ModelContext, databasePatient db: DatabasePatient, now: Date = .now, calendar: Calendar = .current) throws -> Visit {
+        guard db.consultBlockReason == nil else { throw RecordError.invalidIdentity }
+        let key = MedicareID.normalise(db.medicare_number), dob = db.date_of_birth
+        let existing = try context.fetch(FetchDescriptor<Patient>(predicate: #Predicate { $0.medicareID == key && $0.dateOfBirth == dob })).first
+        let patient = existing ?? Patient(fullName: "\(db.first_name) \(db.last_name)".trimmingCharacters(in: .whitespaces), medicareID: key, dateOfBirth: dob)
+        if existing == nil { context.insert(patient) }
+        let visit: Visit
+        if let open = patient.visits.filter({ $0.status != .done && calendar.isDate($0.arrivedAt, inSameDayAs: now) }).max(by: { $0.arrivedAt < $1.arrivedAt }) {
+            visit = open; visit.open()
+        } else {
+            visit = Visit(arrivedAt: now, answers: [])
+            visit.status = .inConsult; visit.databasePatientID = db.patient_id
+            context.insert(visit); patient.visits.append(visit)
+        }
+        patient.revision = UUID()
+        do { try context.save() } catch { context.rollback(); throw error }
+        return visit
+    }
 }
