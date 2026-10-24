@@ -253,3 +253,13 @@ import Testing
     try await Task.sleep(for: .milliseconds(150))
     #expect(!c.isAskingStillThere && c.flow.phase == .cantProceed(0))
 }
+@MainActor @Test func isDigestingSpansTheDigestOnly() async {
+    let (c, _) = makeController([], model: FakeAnswerModel(delay: .milliseconds(150))); c.inputMode = .typing; c.start()
+    #expect(!c.isDigesting)
+    c.submitTyped("Jane Demo"); #expect(c.isDigesting)
+    await eventually { c.flow.phase == .asking(1) }
+    #expect(!c.isDigesting && c.messages.last?.role == .kiosk)
+    c.submitTyped("DEMO001"); #expect(c.isDigesting)
+    c.reset(); #expect(!c.isDigesting)
+    try? await Task.sleep(for: .milliseconds(250)); #expect(!c.isDigesting && c.messages.isEmpty)
+}

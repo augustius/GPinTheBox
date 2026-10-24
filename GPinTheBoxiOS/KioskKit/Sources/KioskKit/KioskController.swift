@@ -30,6 +30,8 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     public private(set) var caption = ""
     public private(set) var isListening = false
     public private(set) var isAskingStillThere = false
+    /// A reply (typed or spoken) is being digested; only a newer reply or `reset()` may replace the session meanwhile.
+    public private(set) var isDigesting = false
     public private(set) var lastError: String?
     /// Text heard by `dictate()`, for the composer to take and then `clearDictation()`.
     public private(set) var dictated = ""
@@ -42,7 +44,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
             guard inputMode != oldValue else { return }
             noteActivity()
             switch flow.phase {
-            case .asking where !digesting: runTurn(speaking: inputMode == .voice ? latestKioskLine : nil)
+            case .asking where !isDigesting: runTurn(speaking: inputMode == .voice ? latestKioskLine : nil)
             case .cantProceed where inputMode == .typing: runTurn(speaking: nil)
             case .review where inputMode == .typing: cancelRespeak()
             default: break
@@ -66,8 +68,6 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     /// The question the patient is typing a draft for: the mic stays closed for it until they submit or clear the draft.
     private var typingAt: Int?
     private var isSpeaking = false
-    /// A reply is being digested; only a newer reply or `reset()` may replace the session meanwhile.
-    private var digesting = false
     private var nextMessageID = 0
     private var submissionID: UUID?
 
@@ -91,7 +91,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
         noteActivity(); typingAt = nil
         let id = say(.patient, text)
         startSession { [self] gen in await digest(text, id: id, target: t, gen: gen) }
-        digesting = true
+        isDigesting = true
     }
 
     /// The **Done** button: ends the listen the way silence does, so the reply is kept.
@@ -114,27 +114,27 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     /// The draft was cleared: in voice mode the mic reopens, without speaking the line again.
     public func endTyping() {
         typingAt = nil
-        guard inputMode == .voice, case .asking = flow.phase, !digesting, !isSpeaking, !isListening else { return }
+        guard inputMode == .voice, case .asking = flow.phase, !isDigesting, !isSpeaking, !isListening else { return }
         noteActivity(); runTurn(speaking: nil)
     }
 
     /// Speaks the latest kiosk line again (also in quiet mode). Not an ask, and nothing is logged.
     public func speakAgain() {
-        guard !digesting, let line = latestKioskLine else { return }
+        guard !isDigesting, let line = latestKioskLine else { return }
         switch flow.phase { case .asking, .cantProceed: break; default: return }
         noteActivity(); runTurn(speaking: line, evenWhenQuiet: true)
     }
 
     /// Asks for the current question another way; counts as an ask.
     public func rephrase() {
-        guard !digesting, let t = flow.currentIndex else { return }
+        guard !isDigesting, let t = flow.currentIndex else { return }
         noteActivity()
         post(lines.ask(flow.questions[t], attempt: max(flow.askCounts[t], 1), name: name, opening: false))
     }
 
     /// Listens once and leaves the text in `dictated` for the composer; nothing is submitted.
     public func dictate() {
-        guard !digesting, listener != nil, let t = flow.currentIndex else { return }
+        guard !isDigesting, listener != nil, let t = flow.currentIndex else { return }
         noteActivity(); typingAt = t
         startSession { [self] gen in
             do { guard let heard = try await listen(gen) else { return }; dictated = heard }
@@ -157,7 +157,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
             messages[m].picked[index] = flow.isAnswered(index) ? flow.answers[index] : nil
         }
         // A cleared required answer ahead of the target becomes the target.
-        guard !digesting, case .asking(let t) = flow.phase, !flow.isAnswered(index), index < t else { return }
+        guard !isDigesting, case .asking(let t) = flow.phase, !flow.isAnswered(index), index < t else { return }
         flow.advance(); proceed(acknowledging: false)
     }
 
@@ -229,7 +229,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
             await previous?.value; await speaker.stop(); await listener?.stop(); await tidier.reset()
         }
         flow = IntakeFlow(); caption = ""; dictated = ""; lastError = nil; submissionID = nil
-        isListening = false; isSpeaking = false; digesting = false; isAskingStillThere = false; typingAt = nil
+        isListening = false; isSpeaking = false; isDigesting = false; isAskingStillThere = false; typingAt = nil
         messages = []
         inputMode = listener == nil ? .typing : .voice
     }
@@ -254,7 +254,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     /// Replaces the running session task; the body must check `isLive(gen)` after every await before writing state.
     private func startSession(_ body: @escaping @MainActor (Int) async -> Void) {
         let interrupting = sessionTask != nil
-        sessionTask?.cancel(); generation += 1; isListening = false; isSpeaking = false; digesting = false
+        sessionTask?.cancel(); generation += 1; isListening = false; isSpeaking = false; isDigesting = false
         let gen = generation, wiping = wiping
         sessionTask = Task {
             await wiping?.value
@@ -284,7 +284,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
             catch { inputMode = .typing; return }
             if heard.isEmpty { flow.advance(); return proceed(acknowledging: false) }
             let id = say(.patient, heard)
-            digesting = true
+            isDigesting = true
             await digest(heard, id: id, target: t, gen: gen)
         }
         isSpeaking = speaks
@@ -293,7 +293,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     private func digest(_ reply: String, id: Int, target t: Int, gen: Int) async {
         let d = await tidier.digest(reply: reply, target: flow.questions[t], unanswered: flow.unanswered)
         guard isLive(gen) else { return }
-        digesting = false
+        isDigesting = false
         var applied = flow.record(d.values)
         if d.skippedTarget { flow.markAnsweredEmpty(t); applied[t] = "" }
         if let m = messages.firstIndex(where: { $0.id == id }) { messages[m].picked = applied }
