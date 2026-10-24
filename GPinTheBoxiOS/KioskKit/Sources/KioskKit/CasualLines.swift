@@ -62,7 +62,7 @@ public struct CasualLines: Sendable {
     static let openingPrefix = "Hey! 👋 Thanks for coming in. "
 
     static let acknowledgements = [
-        "Got it.", "Perfect.", "Thanks, {name}.", "Great, thanks.", "Lovely, thanks.", "Cheers, {name}.", "No worries, thanks.",
+        "Got it.", "Thanks.", "Thanks, {name}.", "Noted, thanks.", "Cheers, {name}.",
     ]
 
     static let firstAsk: [[String]] = [
