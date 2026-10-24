@@ -10,7 +10,7 @@ struct FakeAnswerModel: AnswerModel {
     var extracted: [Int: String] = [:]
     var delay: Duration? = nil
     var error: (any Error & Sendable)? = nil
-    /// Per-reply extractions; a reply not listed here gets `extracted`.
+    /// Per-reply extractions, returned as is (the real model sees answered questions too); other replies get `extracted`, limited to unanswered questions.
     var byReply: [String: [Int: String]] = [:]
 
     func tidy(_ transcript: String, for question: KioskQuestion) async throws -> String {
@@ -18,7 +18,7 @@ struct FakeAnswerModel: AnswerModel {
     }
     func extract(reply: String, target: KioskQuestion, unanswered: [KioskQuestion]) async throws -> [Int: String] {
         let ids = Set(unanswered.map(\.id))
-        return try await perform { (byReply[reply] ?? extracted).filter { ids.contains($0.key) } }
+        return try await perform { byReply[reply] ?? extracted.filter { ids.contains($0.key) } }
     }
     private func perform<T>(_ result: () -> T) async throws -> T {
         if let delay { try await Task.sleep(for: delay) }

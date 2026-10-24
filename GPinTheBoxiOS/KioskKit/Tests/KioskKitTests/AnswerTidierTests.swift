@@ -113,6 +113,53 @@ let q = KioskQuestions.all
     #expect(await AnswerTidier(model: FakeAnswerModel(extracted: [4: "3 days"])).extract(reply: "x", target: q[3], unanswered: q) == [4: "3 days"])
     #expect(await AnswerTidier(model: FakeAnswerModel(extracted: [4: "a while back"])).extract(reply: "x", target: q[4], unanswered: q) == [4: "a while back"])
 }
+@Test func fallbackIgnoresQuestionsBack() async {
+    for model in [FakeAnswerModel(isAvailable: false), FakeAnswerModel()] {
+        #expect(await AnswerTidier(model: model).digest(reply: "Why do you need it?", target: q[0], unanswered: q).values == [:])
+        #expect(await AnswerTidier(model: model).digest(reply: "Is that for the cough?", target: q[3], unanswered: q).values == [:])
+    }
+}
+@Test func idsNeedADigit() async {
+    let off = AnswerTidier(model: FakeAnswerModel(isAvailable: false))
+    #expect(await off.digest(reply: "it's at home", target: q[1], unanswered: q).values == [:])
+    #expect(await off.digest(reply: "demo 001", target: q[1], unanswered: q).values == [1: "DEMO001"])
+    let t = AnswerTidier(model: FakeAnswerModel(extracted: [1: "my card"]))
+    #expect(await t.digest(reply: "my card", target: q[1], unanswered: q).values == [:])
+}
+@Test func nonAnswersToRequiredQuestionsRecordNothing() async {
+    let replies = ["nah", "No thanks.", "don't know", "I don\u{2019}t know", "Not sure...", "dunno", "I don't have one", "I don't have it", "I don't have my card"]
+    for reply in replies {
+        let t = AnswerTidier(model: FakeAnswerModel(extracted: [0: reply, 1: reply, 2: reply, 9: reply]))
+        for target in q.prefix(3) { #expect(await t.digest(reply: reply, target: target, unanswered: q) == ReplyDigest(values: [:], skippedTarget: false), "\(reply)") }
+    }
+    let optional = AnswerTidier(model: FakeAnswerModel(isAvailable: false))
+    #expect(await optional.digest(reply: "not sure", target: q[7], unanswered: q).values == [7: "not sure"])
+}
+@Test func replyMappedOnlyToAnsweredQuestionsFillsNothing() async {
+    let t = AnswerTidier(model: FakeAnswerModel(byReply: ["Actually it's spelt Jon": [0: "Jon"]]))
+    let answers = [0: "Jane Demo", 1: "DEMO001", 2: "1980-05-01"]
+    let d = await t.digest(reply: "Actually it's spelt Jon", target: q[3], unanswered: Array(q.dropFirst(3)), answers: answers)
+    #expect(d == ReplyDigest(values: [:], skippedTarget: false))
+}
+@Test func spellingCorrectionsFillNothingButNamesMaySpellThemselves() async {
+    let t = AnswerTidier(model: FakeAnswerModel(byReply: ["Actually it's spelt Jon": [3: "Actually it's spelt Jon"], "Jon, spelled J O N": [0: "Jon"]]))
+    let rest = Array(q.dropFirst(3)), answers = [0: "Jane Demo", 1: "DEMO001", 2: "1980-05-01"]
+    #expect(await t.digest(reply: "Actually it's spelt Jon", target: q[3], unanswered: rest, answers: answers).values == [:])
+    #expect(await t.digest(reply: "I meant Jon", target: q[1], unanswered: Array(q.dropFirst()), answers: [0: "Jane"]).values == [:])
+    #expect(await t.digest(reply: "Jon, spelled J O N", target: q[0], unanswered: q).values == [0: "Jon"])
+}
+@Test(.enabled(if: FoundationModelsAnswerModel().isAvailable), arguments: [("Why do you need it?", 0), ("nah", 0), ("I don't have my card", 1), ("Pass", 1), ("Do you mean the cough?", 2)])
+func realModelNonAnswersFillNothing(reply: String, target: Int) async {
+    let answers = Dictionary(uniqueKeysWithValues: [(0, "Jane Demo"), (1, "DEMO001")].filter { $0.0 < target })
+    let d = await AnswerTidier(model: FoundationModelsAnswerModel()).digest(reply: reply, target: q[target], unanswered: q.filter { answers[$0.id] == nil }, answers: answers)
+    #expect(d.values.isEmpty, "\(d.values)")
+}
+@Test(.enabled(if: FoundationModelsAnswerModel().isAvailable))
+func realModelCorrectionFillsNothing() async {
+    let answers = [0: "Jane Demo", 1: "DEMO001", 2: "1980-05-01"]
+    let d = await AnswerTidier(model: FoundationModelsAnswerModel()).digest(reply: "Actually it's spelt Jon", target: q[3], unanswered: Array(q.dropFirst(3)), answers: answers)
+    #expect(d.values.isEmpty, "\(d.values)")
+}
 struct ShortReply: Sendable, CustomTestStringConvertible {
     let reply: String, target: Int, allowed: Set<Int>, exact: Bool
     var testDescription: String { "\(reply) → q\(target)" }

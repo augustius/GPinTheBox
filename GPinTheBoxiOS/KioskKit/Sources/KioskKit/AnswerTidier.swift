@@ -56,7 +56,7 @@ public actor AnswerTidier {
         for (id, value) in raw.sorted(by: { ($0.key == target.id ? -1 : $0.key) < ($1.key == target.id ? -1 : $1.key) }) {
             let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty, !text.hasSuffix("?"), !questionTexts.contains(Self.comparable(text)) else { continue }
-            guard let q = byID[id] else { continue }
+            guard let q = byID[id] else { if KioskQuestions.all.indices.contains(id) { addressed = true }; continue }
             guard let value = Self.validated(text, for: q, isTarget: q.id == target.id) else { continue }
             let key = Self.dedupeKey(value)
             if recorded.contains(key) { addressed = true; continue }
@@ -90,24 +90,33 @@ public actor AnswerTidier {
 
     private static let skipWords: Set<String> = ["none", "no", "nothing", "nope", "n/a", "skip", "pass", "i'd rather not say", "rather not say", "prefer not to say"]
 
-    public static func isSkip(_ reply: String) -> Bool {
-        let t = reply.replacingOccurrences(of: "\u{2019}", with: "'")
+    /// Replies that give no answer to a required question: nothing is recorded and it is asked again.
+    private static let nonAnswers: Set<String> = ["nah", "no thanks", "don't know", "i don't know", "not sure", "dunno",
+                                                  "i don't have one", "i don't have it", "i don't have my card"]
+
+    public static func isSkip(_ reply: String) -> Bool { skipWords.contains(wholeReply(reply)) }
+
+    /// "Actually it's spelt Jon": a fix to an earlier answer, which the patient makes on its chip instead.
+    private static func isCorrection(_ reply: String) -> Bool {
+        let t = wholeReply(reply)
+        return t.hasPrefix("i meant") || t.split(whereSeparator: { !$0.isLetter }).contains { ["spelt", "spelled", "spelling"].contains($0) }
+    }
+
+    private static func wholeReply(_ reply: String) -> String {
+        reply.replacingOccurrences(of: "\u{2019}", with: "'")
             .trimmingCharacters(in: CharacterSet(charactersIn: ".!?\u{2026}").union(.whitespacesAndNewlines)).lowercased()
-        return skipWords.contains(t)
     }
 
     public func digest(reply: String, target: KioskQuestion, unanswered: [KioskQuestion], answers: [Int: String] = [:]) async -> ReplyDigest {
         if Self.isSkip(reply) { return ReplyDigest(values: [:], skippedTarget: !target.isRequired) }
+        if target.isRequired && Self.nonAnswers.contains(Self.wholeReply(reply)) { return ReplyDigest(values: [:], skippedTarget: false) }
+        if target.kind != .fullName && Self.isCorrection(reply) { return ReplyDigest(values: [:], skippedTarget: false) }
         let found = await candidates(reply: reply, target: target, unanswered: unanswered, answers: answers)
         if found.addressed { return ReplyDigest(values: found.values, skippedTarget: false) }
+        guard !reply.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("?") else { return ReplyDigest(values: [:], skippedTarget: false) }
         let tidied = await tidy(reply, for: target)
-        let value: String?
-        switch target.kind {
-        case .dateOfBirth: value = AnswerFormatting.isoDOB(from: tidied).flatMap { KioskDate.isValidPastDOB($0) ? $0 : nil }
-        case .identifier: value = AnswerFormatting.normaliseIdentifier(tidied)
-        case .fullName, .freeText: value = tidied
-        }
-        guard let value, !value.isEmpty else { return ReplyDigest(values: [:], skippedTarget: false) }
+        guard let value = Self.validated(tidied, for: target, isTarget: true),
+              !answers.values.map(Self.dedupeKey).contains(Self.dedupeKey(value)) else { return ReplyDigest(values: [:], skippedTarget: false) }
         return ReplyDigest(values: [target.id: value], skippedTarget: false)
     }
 

@@ -40,9 +40,10 @@ public struct FoundationModelsAnswerModel: AnswerModel {
     }
 
     public func extract(reply: String, target: KioskQuestion, unanswered: [KioskQuestion]) async throws -> [Int: String] {
-        let questions = unanswered.map { "\($0.id + 1). \($0.text)" }.joined(separator: "\n")
+        let open = Set(unanswered.map(\.id))
+        let questions = KioskQuestions.all.map { "\($0.id + 1). \($0.text)" + (open.contains($0.id) ? "" : " (already answered)") }.joined(separator: "\n")
         let prompt = "Questions:\n\(questions)\n\nThe kiosk just asked question \(target.id + 1): \(target.text)\nThe patient's reply: \(reply)\n\nWhich of these questions does the patient's reply answer? For each, give the answer in the patient's own words with filler words removed, using the question number. Leave out questions the reply does not explicitly answer."
-        let ids = Set(unanswered.map(\.id))
+        let ids = Set(KioskQuestions.all.indices)
         var result: [Int: String] = [:]
         for c in try await generate(prompt, ExtractionResult.self, instructions: Self.extractionInstructions).candidates where ids.contains(c.questionNumber - 1) {
             result[c.questionNumber - 1] = c.answer

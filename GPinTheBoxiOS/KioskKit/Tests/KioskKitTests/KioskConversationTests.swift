@@ -284,3 +284,12 @@ import Testing
     #expect(c.flow.phase == .cantProceed(1) && c.flow.answers[1] == "")
     #expect(await t.requests.isEmpty)
 }
+@MainActor @Test func correctionToAnsweredNameFillsNothing() async {
+    let model = FakeAnswerModel(byReply: ["Jane Demo": [0: "Jane Demo"], "Actually it's spelt Jon": [0: "Jon"]])
+    let (c, _) = makeController([], model: model, seed: 1); c.inputMode = .typing; c.start()
+    c.submitTyped("Jane Demo"); await eventually { c.flow.phase == .asking(1) }
+    c.submitTyped("D1"); await eventually { c.flow.phase == .asking(2) }
+    c.submitTyped("1/5/1980"); await eventually { c.flow.phase == .asking(3) }
+    c.submitTyped("Actually it's spelt Jon"); await eventually { c.flow.askCounts[3] == 2 }
+    #expect(c.flow.recordedAnswers == [0: "Jane Demo", 1: "D1", 2: "1980-05-01"] && c.messages.last { $0.role == .patient }?.picked == [:])
+}
