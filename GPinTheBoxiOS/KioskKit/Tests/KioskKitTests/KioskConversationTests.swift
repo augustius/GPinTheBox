@@ -263,3 +263,15 @@ import Testing
     c.reset(); #expect(!c.isDigesting)
     try? await Task.sleep(for: .milliseconds(250)); #expect(!c.isDigesting && c.messages.isEmpty)
 }
+@MainActor @Test func rephraseStopsAtAskLimit() async {
+    let (c, _) = makeController([], model: FakeAnswerModel(extracted: [0: "Jane Demo", 1: "DEMO001", 2: "1980-05-01"])); c.inputMode = .typing
+    #expect(!c.canRephrase)
+    c.start(); c.rephrase(); c.rephrase(); #expect(c.flow.askCounts[0] == 3 && !c.canRephrase)
+    let count = c.messages.count; c.rephrase()
+    #expect(c.flow.askCounts[0] == 3 && c.messages.count == count)
+    c.submitTyped("Jane Demo, DEMO001, 1 May 1980"); #expect(!c.canRephrase)   // digesting
+    await eventually { c.flow.phase == .asking(3) }
+    #expect(c.canRephrase); c.rephrase(); #expect(c.flow.askCounts[3] == 2 && !c.canRephrase)
+    let optionalCount = c.messages.count; c.rephrase()
+    #expect(c.flow.askCounts[3] == 2 && c.messages.count == optionalCount)
+}

@@ -38,6 +38,11 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     /// The conversation so far: the kiosk's lines and the patient's replies.
     public private(set) var messages: [ChatMessage] = []
     public var speechAvailable: Bool { listener != nil }
+    /// ↻ is available: a target is being asked, no reply is pending, and its ask limit isn't used up.
+    public var canRephrase: Bool {
+        guard !isDigesting, let t = flow.currentIndex else { return false }
+        return flow.askCounts[t] < (flow.questions[t].isRequired ? IntakeFlow.requiredAskLimit : IntakeFlow.optionalAskLimit)
+    }
     public var latestKioskMessageID: Int? { messages.last { $0.role == .kiosk }?.id }
     public var inputMode: InputMode {
         didSet {
@@ -127,7 +132,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
 
     /// Asks for the current question another way; counts as an ask.
     public func rephrase() {
-        guard !isDigesting, let t = flow.currentIndex else { return }
+        guard canRephrase, let t = flow.currentIndex else { return }
         noteActivity()
         post(lines.ask(flow.questions[t], attempt: max(flow.askCounts[t], 1), name: name, opening: false))
     }
