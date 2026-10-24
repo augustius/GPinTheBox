@@ -27,11 +27,14 @@ public struct Submitter: Sendable {
                 case .ok: return .accepted
                 case .error(let message): return .rejected(message)
                 }
-            } catch is TimeoutError, is CancellationError {
+            } catch is CancellationError {
                 return .unreachable
             } catch {
+                // A TimeoutError may be the transport's own attempt timeout; the loop guard handles the overall deadline.
                 let wait = backoff.isEmpty ? .zero : backoff[min(attempt, backoff.count - 1)]
-                do { try await Task.sleep(for: min(wait, clock.now.duration(to: end))) } catch { return .unreachable }
+                let left = clock.now.duration(to: end)
+                guard left > .zero else { return .unreachable }
+                do { try await Task.sleep(for: min(wait, left)) } catch { return .unreachable }
             }
         }
         return .unreachable

@@ -28,3 +28,8 @@ private let req = KioskRequest(submissionID: UUID(), answers: [.init(q: "Full na
     #expect(await Submitter(transport: Hanging(), deadline: .milliseconds(100)).submit(req) == .unreachable)
     #expect(ContinuousClock.now - start < .seconds(2))
 }
+@Test func attemptTimeoutIsRetried() async {
+    let t = FakeTransport(results: [.failure(TimeoutError()), .success(.ok)])
+    #expect(await Submitter(transport: t, backoff: [.milliseconds(1)], deadline: .seconds(2)).submit(req) == .accepted)
+    #expect(await t.requests.count == 2)
+}
