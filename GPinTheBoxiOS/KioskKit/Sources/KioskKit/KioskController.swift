@@ -306,7 +306,7 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
         var applied = flow.record(d.values)
         if d.skippedTarget { flow.markAnsweredEmpty(t); applied[t] = "" }
         if let m = messages.firstIndex(where: { $0.id == id }) { messages[m].picked = applied }
-        flow.advance(); proceed(acknowledging: !applied.isEmpty)
+        flow.advance(reasking: applied.isEmpty ? nil : t); proceed(acknowledging: !applied.isEmpty)
     }
 
     /// Follows `flow.phase` after an advance: asks for the new target, or ends on the can't-proceed line, or stops at review.

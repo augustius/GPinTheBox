@@ -312,3 +312,15 @@ import Testing
     try? await Task.sleep(for: .milliseconds(100))
     #expect(listener.listens == 1 && !c.isListening && c.dictated.isEmpty)
 }
+@MainActor @Test func replyAnsweringSomethingElseNeverEmptiesTheTarget() async {
+    let (c, _) = makeController([], model: FakeAnswerModel(byReply: ["I'm on aspirin": [6: "aspirin"]]), seed: 1)
+    c.inputMode = .typing; c.start()
+    c.submitTyped("Jane"); await eventually { c.flow.phase == .asking(1) }
+    c.submitTyped("D1"); await eventually { c.flow.phase == .asking(2) }
+    c.submitTyped("1/5/1980"); await eventually { c.flow.phase == .asking(3) }
+    c.rephrase(); #expect(c.flow.askCounts[3] == 2)   // the optional ask limit is used up
+    c.submitTyped("I'm on aspirin"); await eventually { c.flow.answers[6] == "aspirin" }
+    await eventually { c.messages.last?.role == .kiosk && !c.isDigesting }
+    #expect(c.flow.phase == .asking(3) && !c.flow.isAnsweredEmpty(3))
+    c.submitTyped("nope"); await eventually { c.flow.isAnsweredEmpty(3) }   // a reply that answers nothing still ends it
+}

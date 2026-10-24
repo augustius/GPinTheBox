@@ -62,6 +62,11 @@ public actor AnswerTidier {
             if recorded.contains(key) { addressed = true; continue }
             if seen.insert(key).inserted { values[q.id] = value }
         }
+        // The whole reply filed under another question is the answer to the free-text question just asked.
+        if target.kind == .freeText, byID[target.id] != nil, values[target.id] == nil,
+           let other = values.first(where: { Self.dedupeKey($0.value) == Self.dedupeKey(reply) })?.key {
+            values[target.id] = values.removeValue(forKey: other)
+        }
         return (values, addressed || !values.isEmpty)
     }
 

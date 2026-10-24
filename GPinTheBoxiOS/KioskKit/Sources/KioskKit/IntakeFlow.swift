@@ -42,12 +42,14 @@ public struct IntakeFlow: Equatable, Sendable {
         answeredEmpty.insert(i)
     }
 
-    public mutating func advance() {
+    /// Moves to the next unanswered question. `reasking` is a target whose last reply answered other questions:
+    /// it is asked again even past its ask limit, rather than given up on.
+    public mutating func advance(reasking: Int? = nil) {
         for q in questions where q.isRequired && !isAnswered(q.id) {
-            phase = askCounts[q.id] >= Self.requiredAskLimit ? .cantProceed(q.id) : .asking(q.id); return
+            phase = askCounts[q.id] >= Self.requiredAskLimit && q.id != reasking ? .cantProceed(q.id) : .asking(q.id); return
         }
         for q in questions where !q.isRequired && !isAnswered(q.id) {
-            if askCounts[q.id] >= Self.optionalAskLimit { answeredEmpty.insert(q.id); continue }
+            if askCounts[q.id] >= Self.optionalAskLimit && q.id != reasking { answeredEmpty.insert(q.id); continue }
             phase = .asking(q.id); return
         }
         phase = .review

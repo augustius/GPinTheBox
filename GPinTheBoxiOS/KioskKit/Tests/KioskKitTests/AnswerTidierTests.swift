@@ -108,8 +108,8 @@ let q = KioskQuestions.all
     #expect(await bad.extract(reply: "x", target: q[3], unanswered: q) == [:])
     let long = AnswerTidier(model: FakeAnswerModel(extracted: [0: "I have had a really bad cough"]))
     #expect(await long.extract(reply: "x", target: q[3], unanswered: q) == [:])
-    let good = AnswerTidier(model: FakeAnswerModel(extracted: [0: "Jane Demo", 1: "demo 001", 4: "since Monday", 9: "x"]))
-    #expect(await good.extract(reply: "x", target: q[3], unanswered: q) == [0: "Jane Demo", 1: "DEMO001", 4: "since Monday", 9: "x"])
+    let good = AnswerTidier(model: FakeAnswerModel(extracted: [0: "Jane Demo", 1: "demo 001", 4: "since Monday", 9: "Nothing else"]))
+    #expect(await good.extract(reply: "x", target: q[3], unanswered: q) == [0: "Jane Demo", 1: "DEMO001", 4: "since Monday", 9: "Nothing else"])
     #expect(await AnswerTidier(model: FakeAnswerModel(extracted: [4: "3 days"])).extract(reply: "x", target: q[3], unanswered: q) == [4: "3 days"])
     #expect(await AnswerTidier(model: FakeAnswerModel(extracted: [4: "a while back"])).extract(reply: "x", target: q[4], unanswered: q) == [4: "a while back"])
 }
@@ -166,6 +166,19 @@ func realModelCorrectionFillsNothing() async {
     let d = await t.digest(reply: " a dry cough ", target: q[3], unanswered: q)
     #expect(d.values == [3: "a dry cough"])
     #expect(ContinuousClock.now - start < .milliseconds(350), "took \(ContinuousClock.now - start)")
+}
+@Test func wholeReplyUnderAnotherQuestionStaysWithAFreeTextTarget() async {
+    let t = AnswerTidier(model: FakeAnswerModel(extracted: [4: "I've had a cough since Monday"]))
+    #expect(await t.digest(reply: "I've had a cough since Monday", target: q[3], unanswered: q).values == [3: "I've had a cough since Monday"])
+    let part = AnswerTidier(model: FakeAnswerModel(extracted: [4: "since Monday"]))
+    #expect(await part.digest(reply: "I've had a cough since Monday", target: q[3], unanswered: q).values == [4: "since Monday"])
+    #expect(await t.digest(reply: "I've had a cough since Monday", target: q[0], unanswered: q).values == [4: "I've had a cough since Monday"])
+}
+@Test(.enabled(if: FoundationModelsAnswerModel().isAvailable))
+func realModelKeepsTheReasonUnderReason() async {
+    let answers = [0: "Jane Demo", 1: "DEMO001", 2: "1980-05-01"]
+    let d = await AnswerTidier(model: FoundationModelsAnswerModel()).digest(reply: "I've had a cough since Monday", target: q[3], unanswered: Array(q.dropFirst(3)), answers: answers)
+    #expect(d.values[3].map { !$0.isEmpty && $0.lowercased() != "none" } == true, "\(d.values)")
 }
 struct ShortReply: Sendable, CustomTestStringConvertible {
     let reply: String, target: Int, allowed: Set<Int>, exact: Bool
