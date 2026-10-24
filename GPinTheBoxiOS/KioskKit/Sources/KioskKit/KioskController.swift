@@ -142,8 +142,12 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
         guard !isDigesting, listener != nil, let t = flow.currentIndex else { return }
         noteActivity(); typingAt = t
         startSession { [self] gen in
-            do { guard let heard = try await listen(gen) else { return }; dictated = heard }
-            catch { inputMode = .typing }
+            do {
+                guard let heard = try await listen(gen) else { return }
+                guard heard.isEmpty else { dictated = heard; return }
+                typingAt = nil   // nothing heard: in voice mode the mic reopens for the question
+                if inputMode == .voice, case .asking = flow.phase { runTurn(speaking: nil) }
+            } catch { inputMode = .typing }
         }
     }
 

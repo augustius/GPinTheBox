@@ -293,3 +293,22 @@ import Testing
     c.submitTyped("Actually it's spelt Jon"); await eventually { c.flow.askCounts[3] == 2 }
     #expect(c.flow.recordedAnswers == [0: "Jane Demo", 1: "D1", 2: "1980-05-01"] && c.messages.last { $0.role == .patient }?.picked == [:])
 }
+@MainActor @Test func silentDictationReopensTheMicInVoiceMode() async {
+    let listener = FakeListener(script: [[], [], []])
+    let c = KioskController(speaker: FakeSpeaker(), listener: listener, tidier: AnswerTidier(model: FakeAnswerModel()), timings: .test, seed: 1)
+    c.submitter = Submitter(transport: FakeTransport(results: []))
+    c.start(); await eventually { c.isListening && listener.listens == 1 }
+    c.dictate(); await eventually { listener.listens == 2 && c.isListening }
+    c.finishAnswer()
+    await eventually { listener.listens == 3 && c.isListening }
+    #expect(c.dictated.isEmpty && c.flow.phase == .asking(0))
+}
+@MainActor @Test func silentDictationInQuietModeLeavesTheMicClosed() async {
+    let listener = FakeListener(script: [[]])
+    let c = KioskController(speaker: FakeSpeaker(), listener: listener, tidier: AnswerTidier(model: FakeAnswerModel()), timings: .test, seed: 1)
+    c.submitter = Submitter(transport: FakeTransport(results: [])); c.inputMode = .typing; c.start()
+    c.dictate(); await eventually { c.isListening }
+    c.finishAnswer(); await eventually { !c.isListening }
+    try? await Task.sleep(for: .milliseconds(100))
+    #expect(listener.listens == 1 && !c.isListening && c.dictated.isEmpty)
+}
