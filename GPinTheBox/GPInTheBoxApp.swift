@@ -65,6 +65,7 @@ extension View {
     var embedder: ContextualEmbedder?
     private var started = false
     private var serverTask: Task<Void, Never>?
+    private var kioskListener: KioskListener?
     init() {
         do { let container = try GPInTheBoxSchema.makeContainer(); self.container = container; store = RecordStore(modelContainer: container) }
         catch { container = nil; store = nil; startupError = error.localizedDescription }
@@ -83,6 +84,10 @@ extension View {
                 }).run()
             } catch is CancellationError {} catch { self?.serverError = "Intake server couldn't start: \(error.localizedDescription)" }
         }
+        let kioskListener = KioskListener(store: store, onSubmission: { [weak self] receipt in await self?.received(receipt) })
+        self.kioskListener = kioskListener
+        do { _ = try await kioskListener.start() }
+        catch { if serverError == nil { serverError = "Kiosk listener couldn't start: \(error.localizedDescription)" } }
     }
     func refreshAvailability() { availability = FoundationModelsAssistant().availability() }
     func prepareEmbedder() async -> ContextualEmbedder? {
