@@ -12,6 +12,13 @@ public struct KioskTimings: Sendable {
 
 public enum InputMode: Sendable { case voice, typing }
 
+public struct ChatMessage: Identifiable, Equatable, Sendable {
+    public enum Role: Sendable { case kiosk, patient }
+    public let id: Int
+    public let role: Role
+    public let text: String
+}
+
 @MainActor @Observable public final class KioskController {
     public var submitter: Submitter?
     public private(set) var flow = IntakeFlow()
@@ -20,6 +27,8 @@ public enum InputMode: Sendable { case voice, typing }
     public private(set) var isAskingStillThere = false
     public private(set) var transcript = ""
     public private(set) var lastError: String?
+    /// The conversation so far, for display: what the kiosk asked and what was recorded for each answer.
+    public private(set) var messages: [ChatMessage] = []
     public var inputMode: InputMode {
         didSet {
             guard inputMode != oldValue else { return }
@@ -29,6 +38,7 @@ public enum InputMode: Sendable { case voice, typing }
         }
     }
 
+    private static let unreachable = "Couldn't reach the clinic — ask reception"
     private enum Entry { case ask, listen, append, prefill, wait }
     private let speaker: any QuestionSpeaker
     private let listener: (any AnswerListener)?
@@ -40,6 +50,9 @@ public enum InputMode: Sendable { case voice, typing }
     @ObservationIgnored private var wiping: Task<Void, Never>?
     private var generation = 0
     private var appendsTyped = false
+    private var listeningAppends = false
+    private var promptedPhase: FlowPhase?
+    private var nextMessageID = 0
     private var submissionID: UUID?
 
     public init(speaker: any QuestionSpeaker, listener: (any AnswerListener)?, tidier: AnswerTidier, timings: KioskTimings = .standard) {
@@ -49,7 +62,7 @@ public enum InputMode: Sendable { case voice, typing }
 
     public func start() {
         guard submitter != nil, flow.phase == .welcome else { return }
-        flow.start(); noteActivity(); runSession(.ask)
+        flow.start(); showPrompt(); noteActivity(); runSession(.ask)
     }
 
     /// The **Done** button: ends the listen the way silence does, so the answer is kept.
@@ -58,20 +71,33 @@ public enum InputMode: Sendable { case voice, typing }
         noteActivity(); Task { await listener.stop() }
     }
 
-    public func repeatQuestion() { noteActivity(); if flow.currentIndex != nil { runSession(.ask) } }
-    public func skip() { noteActivity(); if flow.skip() { runSession(.ask) } }
+    public func repeatQuestion() { noteActivity(); if flow.currentIndex != nil { showPrompt(force: true); runSession(.ask) } }
+    public func skip() {
+        noteActivity()
+        guard let i = flow.currentIndex, flow.skip() else { return }
+        record(i); showPrompt(); runSession(.ask)
+    }
 
     public func submitTyped(_ text: String) {
-        guard flow.currentIndex != nil else { return }
+        guard let i = flow.currentIndex else { return }
         noteActivity()
         if appendsTyped, case .confirmingCandidate = flow.phase { flow.appendToCandidate(text) }
-        else if !flow.answer(text) { return runSession(.ask) }
-        appendTranscript(text); runSession(.prefill)
+        else if !flow.answer(text) { showPrompt(force: true); return runSession(.ask) }
+        record(i); showPrompt(); appendTranscript(text); runSession(.prefill)
+    }
+
+    /// The patient started typing while the mic was open: drop the spoken attempt (nothing is submitted) and wait for the typed answer.
+    public func beginTyping() {
+        guard isListening, let listener else { return }
+        noteActivity()
+        sessionTask?.cancel(); sessionTask = nil; generation += 1
+        isListening = false; caption = ""; appendsTyped = listeningAppends
+        Task { await listener.stop() }
     }
 
     public func confirmCandidate() {
-        guard case .confirmingCandidate = flow.phase else { return }
-        noteActivity(); flow.confirmCandidate(); runSession(.ask)
+        guard case .confirmingCandidate(let i) = flow.phase else { return }
+        noteActivity(); flow.confirmCandidate(); record(i); showPrompt(); runSession(.ask)
     }
 
     public func addToCandidate() {
@@ -98,9 +124,10 @@ public enum InputMode: Sendable { case voice, typing }
     }
 
     public func send() {
-        guard let submitter, flow.phase != .sending else { return }
+        guard flow.phase != .sending else { return }
         noteActivity(); flow.beginSending()
         guard flow.phase == .sending else { return }
+        guard let submitter else { return flow.sendFailed(Self.unreachable) }
         let id = submissionID ?? UUID()
         submissionID = id; lastError = nil
         let request = flow.request(submissionID: id)
@@ -114,7 +141,7 @@ public enum InputMode: Sendable { case voice, typing }
             case .rejected(let message):
                 flow.sendFailed(message); flow.returnToReview(); lastError = message; noteActivity()
             case .unreachable:
-                flow.sendFailed("Couldn't reach the clinic — ask reception"); noteActivity()
+                flow.sendFailed(Self.unreachable); noteActivity()
             }
         }
     }
@@ -141,6 +168,7 @@ public enum InputMode: Sendable { case voice, typing }
         }
         flow = IntakeFlow(); caption = ""; transcript = ""; lastError = nil; submissionID = nil
         isListening = false; isAskingStillThere = false; appendsTyped = false
+        messages = []; promptedPhase = nil
         inputMode = listener == nil ? .typing : .voice
     }
 
@@ -178,9 +206,10 @@ public enum InputMode: Sendable { case voice, typing }
             if entry == .prefill {
                 let found = await prefill(from: i)
                 guard isLive(gen) else { return }
-                flow.addCandidates(found); entry = .ask; continue
+                flow.addCandidates(found); showPrompt(); entry = .ask; continue
             }
             guard inputMode == .voice else { return }
+            listeningAppends = entry == .append
             let heard: String
             do { guard let h = try await listen(gen) else { return }; heard = h }
             catch { inputMode = .typing; appendsTyped = entry == .append; return }
@@ -189,9 +218,23 @@ public enum InputMode: Sendable { case voice, typing }
             // Prefill runs before the answer lands, so the phase change and the next question are back to back.
             let found = text.isEmpty && entry != .append ? [:] : await prefill(from: i + 1)
             guard isLive(gen) else { return }
-            if entry == .append { flow.appendToCandidate(text) } else if !flow.answer(text) { entry = .ask; continue }
-            flow.addCandidates(found); entry = .ask
+            if entry == .append { flow.appendToCandidate(text) }
+            else if !flow.answer(text) { showPrompt(force: true); entry = .ask; continue }
+            record(i); flow.addCandidates(found); showPrompt(); entry = .ask
         }
+    }
+
+    /// Logs the current question, or the readback when confirming, once per phase (again when `force`d by a re-ask).
+    private func showPrompt(force: Bool = false) {
+        guard let i = flow.currentIndex, force || promptedPhase != flow.phase else { return }
+        promptedPhase = flow.phase
+        say(.kiosk, flow.phase == .confirmingCandidate(i) ? IntakeFlow.readback(flow.candidates[i] ?? "") : flow.questions[i].text)
+    }
+
+    private func record(_ i: Int) { say(.patient, flow.answers[i].isEmpty ? "Skipped" : flow.answers[i]) }
+
+    private func say(_ role: ChatMessage.Role, _ text: String) {
+        nextMessageID += 1; messages.append(ChatMessage(id: nextMessageID, role: role, text: text))
     }
 
     private func prefill(from index: Int) async -> [Int: String] {

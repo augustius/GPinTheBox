@@ -13,17 +13,15 @@ struct ReviewView: View {
                 Text(error).foregroundStyle(.red).multilineTextAlignment(.center)
             }
             List(controller.flow.questions) { q in
-                // A plain tap target: the root activity TapGesture swallows List row Buttons.
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(q.text).font(.headline)
-                    let answer = controller.flow.answers[q.id]
-                    Text(display(answer, isDOB: q.kind == .dateOfBirth))
-                        .foregroundStyle(answer.isEmpty ? .secondary : .primary)
+                Button { editing = EditTarget(id: q.id) } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(q.text).font(.headline)
+                        let answer = controller.flow.answers[q.id]
+                        Text(display(answer, isDOB: q.kind == .dateOfBirth))
+                            .foregroundStyle(answer.isEmpty ? .secondary : .primary)
+                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-                .onTapGesture { editing = EditTarget(id: q.id) }
-                .accessibilityAddTraits(.isButton)
+                .tint(.primary)
             }
             if !controller.flow.canSend {
                 Text("Name, ID and a valid date of birth (YYYY-MM-DD) are needed to send.").font(.footnote).foregroundStyle(.secondary)
@@ -33,7 +31,8 @@ struct ReviewView: View {
                 .disabled(!controller.flow.canSend)
         }
         .padding()
-        .sheet(item: $editing) { EditAnswerSheet(controller: controller, index: $0.id) }
+        .stillThereAlert(controller, enabled: editing == nil)
+        .sheet(item: $editing) { EditAnswerSheet(controller: controller, index: $0.id).stillThereAlert(controller) }
     }
 
     private func display(_ answer: String, isDOB: Bool) -> String {
@@ -53,7 +52,8 @@ private struct EditAnswerSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                TextField("Answer", text: $text, axis: .vertical).font(.title3)
+                AnswerField(kind: controller.flow.questions[index].kind, placeholder: "Answer", text: $text) { save() }
+                    .font(.title3)
                 if controller.inputMode == .voice {
                     Button(controller.isListening ? "Listening…" : "Speak again") { controller.respeak(index) }
                         .disabled(controller.isListening)
@@ -64,11 +64,13 @@ private struct EditAnswerSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("Save") { controller.edit(index, to: text); dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Save", action: save) }
             }
         }
         .onAppear { text = controller.flow.answers[index] }
         .onChange(of: controller.flow.answers[index]) { text = controller.flow.answers[index] }
         .onChange(of: text) { controller.noteActivity() }
     }
+
+    private func save() { controller.edit(index, to: text); dismiss() }
 }

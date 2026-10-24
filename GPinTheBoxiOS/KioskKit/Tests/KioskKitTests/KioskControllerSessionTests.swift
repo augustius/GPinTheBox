@@ -56,3 +56,12 @@ import Testing
     await eventually { c.flow.answers[0] == "John Smith" }
     #expect(c.flow.phase == .review && !c.isListening)
 }
+@MainActor @Test func sendWithoutClinicShowsUnreachable() async {
+    let c = await controllerAtReview(FakeTransport(results: []))
+    c.submitter = nil
+    c.send()
+    #expect(c.flow.phase == .sendFailed("Couldn't reach the clinic — ask reception"))
+    #expect(c.flow.answers[0] == "Jane Demo" && c.flow.answers[2] == "1980-05-01")
+    c.send()
+    #expect(c.flow.phase == .sendFailed("Couldn't reach the clinic — ask reception"))
+}

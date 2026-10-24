@@ -71,3 +71,40 @@ import Testing
     c.replaceCandidate(); try await Task.sleep(for: .milliseconds(100))
     #expect(listener.listens == 0 && !c.isListening)
 }
+@MainActor func voiceController(_ script: [[ListenEvent]]) -> (KioskController, FakeListener) {
+    let listener = FakeListener(script: script)
+    let c = KioskController(speaker: FakeSpeaker(), listener: listener,
+                            tidier: AnswerTidier(model: FakeAnswerModel(), timeout: .milliseconds(100)), timings: .test)
+    c.submitter = Submitter(transport: FakeTransport(results: []))
+    return (c, listener)
+}
+@MainActor @Test func beginTypingStopsListeningWithoutSubmitting() async throws {
+    let (c, _) = voiceController([[.partial("Ja")]])
+    c.start(); await eventually { c.caption == "Ja" }
+    c.beginTyping()
+    #expect(!c.isListening && c.caption.isEmpty)
+    try await Task.sleep(for: .milliseconds(150))
+    #expect(c.flow.answers[0] == "" && c.flow.phase == .asking(0) && !c.isListening)
+    c.submitTyped("Jane Demo")
+    await eventually { c.flow.phase == .asking(1) }
+    #expect(c.flow.answers[0] == "Jane Demo")
+}
+@MainActor @Test func typedAnswerReopensMicForNextQuestion() async {
+    let (c, listener) = voiceController([[.partial("Ja")]])
+    c.start(); await eventually { c.isListening }
+    #expect(listener.listens == 1)
+    c.beginTyping(); c.submitTyped("Jane Demo")
+    await eventually { c.flow.phase == .asking(1) && c.isListening }
+    #expect(listener.listens == 2 && c.inputMode == .voice)
+}
+@MainActor @Test func typingDuringVoiceAddMoreAppends() async {
+    let listener = FakeListener(script: [[.final("Jane Demo, my ID is DEMO001")]])
+    let c = KioskController(speaker: FakeSpeaker(), listener: listener,
+                            tidier: AnswerTidier(model: FakeAnswerModel(prefill: [1: "DEMO001"]), timeout: .milliseconds(100)), timings: .test)
+    c.submitter = Submitter(transport: FakeTransport(results: []))
+    c.start(); await eventually { c.flow.phase == .confirmingCandidate(1) }
+    c.addToCandidate(); await eventually { c.isListening }
+    c.beginTyping(); c.submitTyped("X")
+    await eventually { c.flow.phase == .asking(2) }
+    #expect(c.flow.answers[1] == "DEMO001 X")
+}

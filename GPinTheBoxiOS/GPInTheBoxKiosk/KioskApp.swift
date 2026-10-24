@@ -48,10 +48,12 @@ import KioskKit
     func applyClinic() {
         guard let controller else { return }
         let services = browser.services
-        switch ClinicSelection.choose(available: Array(services.keys), remembered: UserDefaults.standard.string(forKey: Self.clinicKey)) {
-        case .connected(let name): controller.submitter = Submitter(transport: NetworkTransport(endpoint: services[name]!))
-        case .none, .needsPicker: controller.submitter = nil
+        let submitter: Submitter? = switch ClinicSelection.choose(available: Array(services.keys), remembered: UserDefaults.standard.string(forKey: Self.clinicKey)) {
+        case .connected(let name): Submitter(transport: NetworkTransport(endpoint: services[name]!))
+        case .none, .needsPicker: nil
         }
+        // Bonjour results blip; mid-session keep the last good clinic rather than dropping it.
+        if controller.flow.phase == .welcome || controller.submitter == nil { controller.submitter = submitter }
     }
 
     /// The browser never restarts by itself after failing (e.g. Local Network access granted late), so restart it on demand.
@@ -68,11 +70,10 @@ struct RootView: View {
         if let controller = kiosk.controller {
             screen(controller)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
-                .simultaneousGesture(TapGesture().onEnded { controller.noteActivity() })
-                .alert("Are you still there?", isPresented: Binding(get: { controller.isAskingStillThere }, set: { if !$0 { controller.stillHere() } })) {
-                    Button("I'm still here") { controller.stillHere() }
-                }
+                .background(ActivityTracker { [weak kiosk] in kiosk?.controller?.noteActivity() })
+                // Review presents its own alert, so it can show over the edit sheet instead.
+                .stillThereAlert(controller, enabled: controller.flow.phase != .review)
+                .onChange(of: controller.flow.phase == .welcome) { kiosk.applyClinic() }
         } else {
             ProgressView("Getting ready…")
         }
@@ -83,7 +84,7 @@ struct RootView: View {
         case .welcome:
             WelcomeView(kiosk: kiosk, controller: controller)
         case .asking(let i), .confirmingCandidate(let i):
-            QuestionView(controller: controller, index: i, canUseVoice: kiosk.hasListener).id(i)
+            QuestionView(controller: controller, index: i)
         case .review:
             ReviewView(controller: controller)
         case .sending:
@@ -96,5 +97,40 @@ struct RootView: View {
         case .done:
             Text("Thanks, please take a seat.").font(.largeTitle.bold()).multilineTextAlignment(.center).padding()
         }
+    }
+}
+
+extension View {
+    func stillThereAlert(_ controller: KioskController, enabled: Bool = true) -> some View {
+        alert("Are you still there?", isPresented: Binding(get: { enabled && controller.isAskingStillThere },
+                                                         set: { if !$0 { controller.stillHere() } })) {
+            Button("I'm still here") { controller.stillHere() }
+        }
+    }
+}
+
+/// Records activity for every touch in the window (sheets, list rows, scrolling) without taking touches from controls.
+private struct ActivityTracker: UIViewRepresentable {
+    let onTouch: @MainActor () -> Void
+    func makeUIView(context: Context) -> TrackerView { TrackerView() }
+    func updateUIView(_ view: TrackerView, context: Context) { view.recognizer.onTouch = onTouch }
+
+    final class TrackerView: UIView {
+        let recognizer = TouchRecognizer()
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            recognizer.view?.removeGestureRecognizer(recognizer)
+            window?.addGestureRecognizer(recognizer)
+        }
+    }
+
+    final class TouchRecognizer: UIGestureRecognizer, UIGestureRecognizerDelegate {
+        var onTouch: @MainActor () -> Void = {}
+        init() {
+            super.init(target: nil, action: nil)
+            cancelsTouchesInView = false; delaysTouchesBegan = false; delaysTouchesEnded = false; delegate = self
+        }
+        override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) { onTouch(); state = .failed }
+        func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
     }
 }
