@@ -1,1 +1,55 @@
-# GPinTheBox
+# GPInTheBox
+
+A native macOS synthetic-data demo for patient intake over the local network, a GP visit queue, local records, and cited on-device assistance.
+
+## Requirements
+
+- Apple Silicon Mac, macOS 26 or later.
+- Xcode 27.1 / Swift 6.4 (validated toolchain).
+- Apple Intelligence enabled and its model downloaded for summaries and Q&A. Intake and raw records remain usable without it.
+- An initial internet connection for Swift package dependencies and, if unavailable locally, NaturalLanguage embedding assets. Patient records are never sent to an AI service. Embedding failure falls back to keyword retrieval.
+
+## Build and run
+
+Open `GPInTheBox/GPInTheBox.xcodeproj`, select the **GPInTheBox** scheme and **My Mac**, then Run. Alternatively:
+
+```sh
+xcodebuild -project GPInTheBox/GPInTheBox.xcodeproj \
+  -scheme GPInTheBox -destination 'platform=macOS,arch=arm64' \
+  -derivedDataPath DerivedData CODE_SIGN_IDENTITY=- build
+open DerivedData/Build/Products/Debug/GPInTheBox.app
+```
+
+This is a local ad-hoc signed build, not a notarized distribution. For distribution or signing on another Mac, select your development team in Xcode.
+
+The toolbar shows `http://<Mac LAN address>:8080`. Open it on a phone or tablet on the same Wi-Fi. Local Network permission and network/firewall policy must allow the connection. Notification permission is optional and must not block intake startup. Port conflicts appear in the toolbar. Closing the application stops the intake server.
+
+## Demo walkthrough
+
+1. Submit **Jane Demo — Synthetic Patient**, ID `DEMO-001`, DOB `1980-05-01`, with fictional cough symptoms.
+2. Open Jane in the queue. The visit changes from **Waiting** to **In consult**. Review the raw intake and enter a fictional GP note, such as “Ask about cough next visit. Recheck blood pressure next visit.”
+3. Choose **Finish visit**. Submit a fresh form using `demo 001` and the same DOB. It matches Jane and creates a separate visit.
+4. Open the return visit. Review past notes, choose **Summarise**, and ask a record question. Each generated claim shows its original source and date. Follow-ups use **Mentioned in today’s intake**, which does not mean completed.
+5. Change patients or edit a note to clear previous assistant output. Use **Correct identity** for corrections; collisions are rejected rather than merged.
+6. Open Settings to edit/reorder questions and publish a new questionnaire version. Previously opened forms remain valid against their original version.
+
+No demo data is automatically inserted. The local store persists across app launches in the app's sandbox. Q&A and generated summaries are not persisted. Copies deliberately entered into a GP note are persisted.
+
+## Verification
+
+```sh
+swift test --package-path Packages/GPInTheBoxKit
+swift run --package-path Packages/GPInTheBoxKit ModelProbe
+```
+
+Package tests use temporary or in-memory stores and fake models. `ModelProbe` explicitly runs synthetic examples against the real on-device model; it reports skipped checks when unavailable and exits unsuccessfully if a real-model check fails. It does not write patient records.
+
+See `GPinTheBox/docs/implementation-status.md` for verified behavior and remaining manual checks.
+
+## Boundaries
+
+This demo is for synthetic records only. It uses plain HTTP, has no intake authentication, and intentionally omits production access control, audit logging, backup/recovery, multi-Mac sync, and EHR integration. Do not use it as a clinical system of record.
+
+The assistant rejects absent/unknown citations and quotes that are not present in the exact supplied excerpts. These structural checks do not prove that a claim logically follows from its source. Review displayed evidence. Generated responses can be incomplete or wrong; the raw record remains available. The model is instructed not to diagnose or recommend treatment, but instructions are not a guarantee of model behavior.
+
+The original implementation plan is in `GPinTheBox/docs/superpowers/plans/2026-10-24-gpinthebox-demo-v1.md`; the implementation retains the approved reliability fixes on top of that plan.
