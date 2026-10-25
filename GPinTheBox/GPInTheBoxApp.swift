@@ -37,6 +37,10 @@ extension View {
             .tint(Color.careAccent).groupBoxStyle(CareGroupBoxStyle())
             .background(Color.careBackground).preferredColorScheme(.light)
     }
+    /// A filled button with white text. `careTheme()` sets a dark foreground style that would otherwise override the label.
+    func careProminentButton() -> some View {
+        self.buttonStyle(.borderedProminent).foregroundStyle(.white)
+    }
     /// Minimum window size on macOS. iOS screens are fixed and narrower, so no minimum applies there.
     @ViewBuilder func macWindowMinimum() -> some View {
         #if os(macOS)
@@ -173,7 +177,7 @@ struct AppEntryView: View {
             Text(title).font(.title.bold())
             Text(detail).foregroundStyle(Color.careSecondary).fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, minHeight: minWidth == nil ? nil : 80, alignment: .topLeading)
-            Button(button, action: action).buttonStyle(.borderedProminent).controlSize(.large).tint(Color.careAccent)
+            Button(button, action: action).careProminentButton().controlSize(.large).tint(Color.careAccent)
                 .disabled(title == "Patient" && (model.serverURL == nil || model.serverError != nil))
         }.padding(minWidth == nil ? 20 : 28).frame(minWidth: minWidth, maxWidth: .infinity, minHeight: minWidth == nil ? nil : 300, alignment: .topLeading)
             .background(Color.careSurface, in: RoundedRectangle(cornerRadius: 20))
@@ -195,6 +199,12 @@ struct ClinicView: View {
                     QueueSidebar(model: model, date: context.date)
                         .id(Calendar.current.startOfDay(for: context.date))
                 }
+                #if os(iOS)
+                // The split view's toolbar only appears with the detail column, which iPhone hides until a
+                // patient is selected, so the database stays reachable from the sidebar.
+                Button("Patient database", systemImage: "person.text.rectangle") { showingPatientDatabase = true }
+                    .buttonStyle(.bordered).padding(.horizontal)
+                #endif
                 Text("Synthetic demo · Saved on this Mac").font(.caption).foregroundStyle(Color.careSecondary).padding()
             }.padding(.top, 20).background(Color.careSidebar).navigationSplitViewColumnWidth(min: 240, ideal: 270)
         } detail: {
@@ -363,7 +373,7 @@ struct PatientDetailView: View {
     @ViewBuilder private var visitActions: some View {
         Button("Correct identity") { correcting = true }
         Button("Finish visit") { visit.finish(); save() }
-            .buttonStyle(.borderedProminent).tint(Color.careAccent)
+            .careProminentButton().tint(Color.careAccent)
             .disabled(visit.status == .done || model.recordingVisitID == visit.id)
     }
 
@@ -566,7 +576,7 @@ struct IdentityEditor: View {
                         dismiss()
                     } catch { self.error = error.localizedDescription }; saving = false
                 }
-            }.buttonStyle(.borderedProminent).disabled(saving) }
+            }.careProminentButton().disabled(saving) }
         }.textFieldStyle(.roundedBorder).padding(28).frame(width: 480)
         .onAppear { name = patient.fullName; medicare = patient.medicareID; dob = patient.dateOfBirth }
     }

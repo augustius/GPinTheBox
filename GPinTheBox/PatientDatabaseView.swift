@@ -16,9 +16,43 @@ struct PatientDatabaseView: View {
     @State private var importRevision = 0
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    #endif
 
     var body: some View {
+        content.macWindowMinimum()
+            .fileImporter(isPresented: $choosingFiles, allowedContentTypes: [.commaSeparatedText], allowsMultipleSelection: true) { result in
+                Task { await importFiles(result) }
+            }
+    }
+    @ViewBuilder private var content: some View {
+        #if os(iOS)
+        if sizeClass == .compact {
+            // iPhone is too narrow for list and detail side by side, so selecting a patient pushes the detail.
+            NavigationStack {
+                VStack(spacing: 0) { header; patientList }
+                    .toolbar(.hidden, for: .navigationBar)
+                    .navigationDestination(item: $selectedID) { id in detail(for: id) }
+            }
+        } else {
+            splitContent
+        }
+        #else
+        splitContent
+        #endif
+    }
+    private var splitContent: some View {
         VStack(spacing: 0) {
+            header
+            SplitLayout {
+                patientList.frame(minWidth: 280, idealWidth: 330, maxWidth: 420)
+                detail(for: selectedID)
+            }
+        }
+    }
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Patient database").font(.title2.bold())
                 Spacer()
@@ -27,30 +61,29 @@ struct PatientDatabaseView: View {
                 Button("Close") { dismiss() }
             }.padding()
             if let message { Text(message).font(.callout).padding(.horizontal).textSelection(.enabled) }
-            SplitLayout {
-                VStack(alignment: .leading) {
-                    TextField("First name, last name, or Medicare number", text: $query).textFieldStyle(.roundedBorder)
-                    Text("\(patients.count) imported patients").font(.caption).foregroundStyle(Color.careSecondary)
-                    List(selection: $selectedID) {
-                        ForEach(patients.filter { $0.matches(query) }) { patient in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("\(patient.first_name) \(patient.last_name)").font(.headline)
-                                Text("\(patient.patient_id) · DOB \(patient.date_of_birth)")
-                                Text(patient.medicare_number).foregroundStyle(Color.careSecondary)
-                            }.tag(patient.patient_id)
-                        }
-                    }
-                }.padding().frame(minWidth: 280, idealWidth: 330, maxWidth: 420)
-                if let patient = patients.first(where: { $0.patient_id == selectedID }) {
-                    DatabasePatientDetail(patient: patient, onConsult: consult).id("\(patient.patient_id)-\(importRevision)")
-                } else {
-                    ContentUnavailableView("Select a patient", systemImage: "person.text.rectangle", description: Text("Import the patient and consultation CSVs, then search by first name, last name, or Medicare number."))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+    private var patientList: some View {
+        VStack(alignment: .leading) {
+            TextField("First name, last name, or Medicare number", text: $query).textFieldStyle(.roundedBorder)
+            Text("\(patients.count) imported patients").font(.caption).foregroundStyle(Color.careSecondary)
+            List(selection: $selectedID) {
+                ForEach(patients.filter { $0.matches(query) }) { patient in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(patient.first_name) \(patient.last_name)").font(.headline)
+                        Text("\(patient.patient_id) · DOB \(patient.date_of_birth)")
+                        Text(patient.medicare_number).foregroundStyle(Color.careSecondary)
+                    }.tag(patient.patient_id)
                 }
             }
-        }.macWindowMinimum()
-        .fileImporter(isPresented: $choosingFiles, allowedContentTypes: [.commaSeparatedText], allowsMultipleSelection: true) { result in
-            Task { await importFiles(result) }
+        }.padding()
+    }
+    @ViewBuilder private func detail(for id: String?) -> some View {
+        if let patient = patients.first(where: { $0.patient_id == id }) {
+            DatabasePatientDetail(patient: patient, onConsult: consult).id("\(patient.patient_id)-\(importRevision)")
+        } else {
+            ContentUnavailableView("Select a patient", systemImage: "person.text.rectangle", description: Text("Import the patient and consultation CSVs, then search by first name, last name, or Medicare number."))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
     /// Starts (or reopens) today's consult for the patient on the app's main context, then shows it in the GP workspace.
@@ -116,7 +149,7 @@ private struct DatabasePatientDetail: View {
                     Text("\(patient.first_name) \(patient.last_name)").font(.largeTitle.bold())
                     Spacer()
                     Button("Consult") { onConsult(patient) }
-                        .buttonStyle(.borderedProminent).tint(Color.careAccent).controlSize(.large)
+                        .careProminentButton().tint(Color.careAccent).controlSize(.large)
                         .disabled(patient.consultBlockReason != nil)
                 }
                 if let reason = patient.consultBlockReason { Text(reason).font(.callout).foregroundStyle(Color.careSecondary) }

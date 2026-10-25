@@ -33,7 +33,7 @@ struct SpeechSettingsView: View {
                     Button("Cancel") { cancelPreparation() }
                 } else {
                     Button(installed ? "Verify model" : "Download speaker model") { prepare() }
-                        .buttonStyle(.borderedProminent)
+                        .careProminentButton()
                 }
             }
             if preparing { Text(installed ? "Verifying the installed model on this Mac…" : "Downloading and preparing the model. The first load may take a few minutes.").font(.caption).foregroundStyle(Color.careSecondary) }
@@ -47,7 +47,7 @@ struct SpeechSettingsView: View {
                         try SpeechGlossaryStore().save(terms.components(separatedBy: .newlines))
                         dismiss()
                     } catch { self.error = error.localizedDescription }
-                }.buttonStyle(.borderedProminent)
+                }.careProminentButton()
             }
         }.padding(24).frame(width: 650)
         .onAppear {

@@ -138,10 +138,10 @@ struct ConsultationPanel: View {
             Spacer()
             if recorder.isRecording {
                 Label("Recording · \(elapsed)", systemImage: "record.circle.fill").foregroundStyle(.red).font(.headline).accessibilityLabel("Recording in progress")
-                Button("Stop & transcribe") { stopAndTranscribe() }.buttonStyle(.borderedProminent).tint(.red)
+                Button("Stop & transcribe") { stopAndTranscribe() }.careProminentButton().tint(.red)
             } else {
                 Button { startRecording() } label: { Label(consultations.isEmpty ? "Start recording" : "Record again", systemImage: "mic.fill") }
-                    .buttonStyle(.borderedProminent).tint(Color.careAccent)
+                    .careProminentButton().tint(Color.careAccent)
                     .disabled(!consent || working != nil || model.recordingVisitID != nil || visit.status == .done)
             }
         }
@@ -451,7 +451,7 @@ struct ConsultationReview: View {
             Toggle("I have checked and corrected this summary against the consultation.", isOn: $reviewed)
             HStack {
                 Button("Save draft") { saveDraft() }.disabled(generating || summaryEdit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || transcriptEdit != consultation.transcript)
-                Button("Approve & save to patient record") { approve() }.buttonStyle(.borderedProminent).tint(Color.careAccent)
+                Button("Approve & save to patient record") { approve() }.careProminentButton().tint(Color.careAccent)
                     .disabled(!reviewed || generating || summaryEdit.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || transcriptEdit != consultation.transcript)
             }
             if let approvedAt = consultation.approvedAt, consultation.approvedSnapshot() != nil {

@@ -33,7 +33,7 @@ struct QuestionnaireEditor: View {
                         catch { message = error.localizedDescription }
                         saving = false
                     }
-                }.buttonStyle(.borderedProminent).disabled(saving || questions.isEmpty)
+                }.careProminentButton().disabled(saving || questions.isEmpty)
             }
         }.padding(24).task {
             do { questions = try await model.store?.questionnaire().questions ?? [] }
